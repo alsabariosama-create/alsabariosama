@@ -5456,16 +5456,226 @@
     showNotification('فحص البيانات', `عدد الاستقطاعات المحفوظة: ${deductionsCount}`, 'info');
 }
         
+// إضافة قسم المزامنة في صفحة الإعدادات
+document.addEventListener('DOMContentLoaded', function() {
+    // إضافة قسم المزامنة السحابية
+    const settingsGrid = document.querySelector('#settings-content .grid-2');
+    if (settingsGrid) {
+        const syncSection = document.createElement('div');
+        syncSection.className = 'card';
+        syncSection.innerHTML = `
+            <h3>
+                <i class="fas fa-cloud-upload-alt"></i>
+                المزامنة السحابية
+            </h3>
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div style="background: var(--primary-blue-light); padding: 1rem; border-radius: 0.5rem; border-right: 3px solid var(--primary-blue);">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <i class="fas fa-info-circle" style="color: var(--primary-blue);"></i>
+                        <strong>حالة المزامنة:</strong>
+                    </div>
+                    <div id="sync-status" style="font-size: 0.875rem; color: var(--gray-700);">
+                        جاري التحقق...
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label>تفعيل المزامنة السحابية</label>
+                    <input type="checkbox" id="enable-sync" onchange="toggleSyncEnabled(this.checked)">
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label>المزامنة التلقائية</label>
+                    <input type="checkbox" id="auto-sync" onchange="toggleAutoSync(this.checked)">
+                </div>
+                
+                <div class="form-field">
+                    <label>
+                        <i class="fas fa-clock"></i>
+                        فترة المزامنة التلقائية (دقيقة)
+                    </label>
+                    <input type="number" id="sync-interval" value="30" min="5" max="1440" onchange="updateSyncInterval(this.value)">
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <button class="btn btn-primary" onclick="manualSync()" id="sync-button">
+                        <i class="fas fa-sync-alt"></i>
+                        مزامنة الآن
+                    </button>
+                    <button class="btn btn-success" onclick="downloadFromCloud()">
+                        <i class="fas fa-cloud-download-alt"></i>
+                        استيراد من السحابة
+                    </button>
+                    <button class="btn btn-secondary" onclick="uploadToCloud()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        رفع للسحابة
+                    </button>
+                    <button class="btn btn-danger" onclick="clearCloudData()">
+                        <i class="fas fa-trash-alt"></i>
+                        مسح البيانات السحابية
+                    </button>
+                </div>
+                
+                <div style="font-size: 0.75rem; color: var(--gray-500); text-align: center;">
+                    <i class="fas fa-shield-alt"></i>
+                    جميع بياناتك محمية ومشفرة
+                </div>
+            </div>
+        `;
+        settingsGrid.appendChild(syncSection);
+    }
+    
+    // تحديث حالة المزامنة
+    updateSyncUI();
+    setInterval(updateSyncUI, 5000); // تحديث كل 5 ثواني
+});
+
+// تحديث واجهة المزامنة
+function updateSyncUI() {
+    if (!window.supabaseSync) return;
+    
+    const status = window.supabaseSync.getSyncStatus();
+    const statusDiv = document.getElementById('sync-status');
+    const syncButton = document.getElementById('sync-button');
+    
+    if (statusDiv) {
+        let statusHTML = '';
+        
+        if (status.inProgress) {
+            statusHTML = '<i class="fas fa-spinner fa-spin"></i> جاري المزامنة...';
+            if (syncButton) syncButton.disabled = true;
+        } else {
+            if (syncButton) syncButton.disabled = false;
+            
+            if (!status.isOnline) {
+                statusHTML = '<i class="fas fa-wifi-slash" style="color: var(--error-red);"></i> غير متصل بالإنترنت';
+            } else if (!status.enabled) {
+                statusHTML = '<i class="fas fa-times-circle" style="color: var(--warning-yellow);"></i> المزامنة معطلة';
+            } else if (status.lastSync) {
+                const lastSyncDate = new Date(status.lastSync);
+                const timeDiff = Math.round((Date.now() - lastSyncDate) / 60000);
+                statusHTML = `<i class="fas fa-check-circle" style="color: var(--success-green);"></i> آخر مزامنة: منذ ${timeDiff} دقيقة`;
+            } else {
+                statusHTML = '<i class="fas fa-exclamation-circle" style="color: var(--warning-yellow);"></i> لم تتم المزامنة بعد';
+            }
+        }
+        
+        statusDiv.innerHTML = statusHTML;
+    }
+    
+    // تحديث الإعدادات
+    const enableSync = document.getElementById('enable-sync');
+    const autoSync = document.getElementById('auto-sync');
+    const syncInterval = document.getElementById('sync-interval');
+    
+    if (enableSync) enableSync.checked = status.enabled;
+    if (autoSync) autoSync.checked = status.autoSync;
+    if (syncInterval && status.enabled) syncInterval.value = window.supabaseSync.syncInterval || 30;
+}
+
+// تفعيل/تعطيل المزامنة
+function toggleSyncEnabled(enabled) {
+    if (window.supabaseSync) {
+        window.supabaseSync.toggleSync(enabled);
+        showNotification(
+            enabled ? 'تم التفعيل' : 'تم التعطيل',
+            enabled ? 'تم تفعيل المزامنة السحابية' : 'تم تعطيل المزامنة السحابية',
+            'success'
+        );
+        updateSyncUI();
+    }
+}
+
+// تفعيل/تعطيل المزامنة التلقائية
+function toggleAutoSync(enabled) {
+    if (window.supabaseSync) {
+        const interval = parseInt(document.getElementById('sync-interval').value) || 30;
+        window.supabaseSync.toggleAutoSync(enabled, interval);
+        showNotification(
+            enabled ? 'تم التفعيل' : 'تم التعطيل',
+            enabled ? 'تم تفعيل المزامنة التلقائية' : 'تم تعطيل المزامنة التلقائية',
+            'success'
+        );
+        updateSyncUI();
+    }
+}
+
+// تحديث فترة المزامنة
+function updateSyncInterval(minutes) {
+    if (window.supabaseSync && window.supabaseSync.autoSync) {
+        window.supabaseSync.setupAutoSync(parseInt(minutes));
+        showNotification('تم التحديث', `تم تحديث فترة المزامنة إلى ${minutes} دقيقة`, 'success');
+    }
+}
+
+// مزامنة يدوية
+async function manualSync() {
+    if (!window.supabaseSync) {
+        showNotification('خطأ', 'نظام المزامنة غير متاح', 'error');
+        return;
+    }
+    
+    const result = await window.supabaseSync.syncAllData();
+    updateSyncUI();
+}
+
+// استيراد من السحابة
+async function downloadFromCloud() {
+    if (!window.supabaseSync) {
+        showNotification('خطأ', 'نظام المزامنة غير متاح', 'error');
+        return;
+    }
+    
+    if (!confirm('هل تريد استيراد جميع البيانات من السحابة؟ سيتم دمجها مع البيانات المحلية.')) {
+        return;
+    }
+    
+    const result = await window.supabaseSync.syncAllData();
+    if (result) {
+        // تحديث جميع الواجهات
+        renderCasesTable();
+        renderDefendantsTable();
+        renderLawyersTable();
+        renderDeductionsTable();
+        updateDashboardStats();
+    }
+}
+
+// رفع للسحابة
+async function uploadToCloud() {
+    if (!window.supabaseSync) {
+        showNotification('خطأ', 'نظام المزامنة غير متاح', 'error');
+        return;
+    }
+    
+    if (!confirm('هل تريد رفع جميع البيانات المحلية إلى السحابة؟')) {
+        return;
+    }
+    
+    await window.supabaseSync.syncAllData();
+}
+
+// مسح البيانات السحابية
+async function clearCloudData() {
+    if (!window.supabaseSync) {
+        showNotification('خطأ', 'نظام المزامنة غير متاح', 'error');
+        return;
+    }
+    
+    await window.supabaseSync.clearCloudData();
+}
+
+
+
+
+        
     </script>
 
     <script src="app-complete.js"></script>
-<script src="firebase-integration-v4.js"></script>
-<!-- في نهاية ملف index.html قبل </body> -->
-<script src="notifications-system.js"></script>
-<script src="firebase-sync-manager.js"></script>
- 
  <script src="supabase-sync.js"></script>
+ <script src="notifications-system.js"></script>
+
+ 
     
 </body>
-
 </html>
