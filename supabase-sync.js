@@ -1,869 +1,598 @@
 // supabase-sync.js
-/**
- * نظام المزامنة مع Supabase لتطبيق إدارة الدعاوى القضائية
- * يعمل مع التخزين المحلي ويزامن البيانات مع السحابة عند الطلب
- */
-
-const SUPABASE_URL = 'https://dopzopezvkwdoeeliwwd.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcHpvcGV6dmt3ZG9lZWxpd3dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMzg2MDQsImV4cCI6MjA3NDgxNDYwNH0.VZjhi0-tx5EvFwEXUfjCWyMujwbvGrGisSeOdYm0Rnk';
+// نظام المزامنة الشامل مع Supabase
 
 class SupabaseSync {
     constructor() {
-        this.supabase = null;
-        this.userId = null;
-        this.syncEnabled = false;
-        this.autoSync = false;
-        this.lastSyncTime = null;
-        this.isOnline = navigator.onLine;
-        this.syncInProgress = false;
+        // إعداد Supabase
+        this.supabaseUrl = 'https://dopzopezvkwdoeeliwwd.supabase.co';
+        this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcHpvcGV6dmt3ZG9lZWxpd3dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMzg2MDQsImV4cCI6MjA3NDgxNDYwNH0.VZjhi0-tx5EvFwEXUfjCWyMujwbvGrGisSeOdYm0Rnk';
         
-        this.initSupabase();
-        this.loadSyncSettings();
-        this.setupEventListeners();
+        // تحميل Supabase client
+        this.loadSupabaseClient();
+        
+        // معرف المستخدم الفريد (يتم إنشاؤه أو استرجاعه)
+        this.userId = this.getUserId();
+        
+        // حالة المزامنة
+        this.isSyncing = false;
+        this.lastSyncTime = localStorage.getItem('lastSyncTime') || null;
+        
+        // إعدادات المزامنة التلقائية
+        this.autoSyncEnabled = localStorage.getItem('autoSyncEnabled') === 'true';
+        this.autoSyncInterval = parseInt(localStorage.getItem('autoSyncInterval')) || 300000; // 5 دقائق
+        this.autoSyncTimer = null;
+        
+        if (this.autoSyncEnabled) {
+            this.startAutoSync();
+        }
     }
 
-    // تهيئة Supabase
-    initSupabase() {
-        try {
-            // تحميل مكتبة Supabase من CDN
+    // تحميل Supabase Client من CDN
+    async loadSupabaseClient() {
+        if (window.supabase) {
+            this.initializeClient();
+            return;
+        }
+
+        return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
             script.onload = () => {
-                this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                console.log('تم تهيئة Supabase بنجاح');
-                this.checkAuth();
+                this.initializeClient();
+                resolve();
             };
-            script.onerror = () => {
-                console.error('فشل تحميل مكتبة Supabase');
-                showNotification('خطأ', 'فشل الاتصال بخادم المزامنة', 'error');
-            };
+            script.onerror = reject;
             document.head.appendChild(script);
-        } catch (error) {
-            console.error('خطأ في تهيئة Supabase:', error);
-        }
+        });
     }
 
-    // التحقق من المصادقة
-    async checkAuth() {
-        if (!this.supabase) return;
+    initializeClient() {
+        this.supabase = window.supabase.createClient(this.supabaseUrl, this.supabaseKey);
+    }
+
+    // الحصول على أو إنشاء معرف المستخدم
+    getUserId() {
+        let userId = localStorage.getItem('syncUserId');
+        if (!userId) {
+            userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('syncUserId', userId);
+        }
+        return userId;
+    }
+
+    // دالة المزامنة الرئيسية
+    async syncAll() {
+        if (this.isSyncing) {
+            console.log('المزامنة قيد التشغيل بالفعل');
+            return { success: false, message: 'المزامنة قيد التشغيل بالفعل' };
+        }
+
+        this.isSyncing = true;
         
         try {
-            const { data: { session } } = await this.supabase.auth.getSession();
-            if (session) {
-                this.userId = session.user.id;
-                this.syncEnabled = true;
-                console.log('المستخدم مسجل الدخول:', this.userId);
-                
-                if (this.autoSync) {
-                    this.syncAllData();
-                }
-            } else {
-                // محاولة تسجيل دخول تلقائي أو إنشاء مستخدم مؤقت
-                await this.createAnonymousUser();
+            showNotification('المزامنة', 'جاري مزامنة البيانات مع السحابة...', 'info');
+            
+            // التأكد من تحميل Supabase
+            if (!this.supabase) {
+                await this.loadSupabaseClient();
             }
-        } catch (error) {
-            console.error('خطأ في التحقق من المصادقة:', error);
-        }
-    }
 
-    // إنشاء مستخدم مؤقت
-    async createAnonymousUser() {
-        try {
-            // استخدام معرف فريد مخزن محلياً
-            let deviceId = localStorage.getItem('deviceId');
-            if (!deviceId) {
-                deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('deviceId', deviceId);
-            }
-            this.userId = deviceId;
-            console.log('تم إنشاء معرف جهاز:', this.userId);
-        } catch (error) {
-            console.error('خطأ في إنشاء مستخدم مؤقت:', error);
-        }
-    }
-
-    // تحميل إعدادات المزامنة
-    loadSyncSettings() {
-        const settings = LocalStorage.load('syncSettings', {
-            enabled: false,
-            autoSync: false,
-            syncInterval: 30, // دقيقة
-            lastSync: null
-        });
-        
-        this.syncEnabled = settings.enabled;
-        this.autoSync = settings.autoSync;
-        this.lastSyncTime = settings.lastSync;
-        
-        // إعداد المزامنة التلقائية
-        if (this.autoSync && settings.syncInterval > 0) {
-            this.setupAutoSync(settings.syncInterval);
-        }
-    }
-
-    // حفظ إعدادات المزامنة
-    saveSyncSettings() {
-        const settings = {
-            enabled: this.syncEnabled,
-            autoSync: this.autoSync,
-            syncInterval: this.syncInterval || 30,
-            lastSync: this.lastSyncTime
-        };
-        LocalStorage.save('syncSettings', settings);
-    }
-
-    // إعداد المزامنة التلقائية
-    setupAutoSync(intervalMinutes) {
-        if (this.autoSyncInterval) {
-            clearInterval(this.autoSyncInterval);
-        }
-        
-        this.autoSyncInterval = setInterval(() => {
-            if (this.syncEnabled && this.isOnline && !this.syncInProgress) {
-                this.syncAllData();
-            }
-        }, intervalMinutes * 60 * 1000);
-    }
-
-    // إعداد مستمعي الأحداث
-    setupEventListeners() {
-        // مراقبة حالة الاتصال
-        window.addEventListener('online', () => {
-            this.isOnline = true;
-            console.log('تم الاتصال بالإنترنت');
-            if (this.autoSync) {
-                this.syncAllData();
-            }
-        });
-
-        window.addEventListener('offline', () => {
-            this.isOnline = false;
-            console.log('انقطع الاتصال بالإنترنت');
-        });
-
-        // المزامنة قبل إغلاق الصفحة
-        window.addEventListener('beforeunload', () => {
-            if (this.syncEnabled && this.isOnline) {
-                this.savePendingChanges();
-            }
-        });
-    }
-
-    // ===== دوال المزامنة الرئيسية =====
-
-    // مزامنة جميع البيانات
-    async syncAllData() {
-        if (!this.syncEnabled || !this.isOnline || this.syncInProgress) {
-            return false;
-        }
-
-        this.syncInProgress = true;
-        showNotification('المزامنة', 'جارٍ مزامنة البيانات...', 'info');
-
-        try {
-            const syncResults = {
-                cases: await this.syncCases(),
-                defendants: await this.syncDefendants(),
-                lawyers: await this.syncLawyers(),
-                deductions: await this.syncDeductions(),
-                notifications: await this.syncNotifications(),
-                settings: await this.syncSettings()
-            };
-
+            // 1. رفع البيانات المحلية إلى السحابة
+            await this.uploadLocalData();
+            
+            // 2. تحميل البيانات من السحابة
+            await this.downloadCloudData();
+            
+            // 3. دمج البيانات
+            await this.mergeData();
+            
+            // 4. تحديث وقت آخر مزامنة
             this.lastSyncTime = new Date().toISOString();
-            this.saveSyncSettings();
-
-            const totalSynced = Object.values(syncResults).reduce((sum, result) => sum + result.synced, 0);
-            const totalErrors = Object.values(syncResults).reduce((sum, result) => sum + result.errors, 0);
-
-            if (totalErrors === 0) {
-                showNotification('نجاح المزامنة', `تم مزامنة ${totalSynced} عنصر بنجاح`, 'success');
-            } else {
-                showNotification('المزامنة مكتملة مع أخطاء', `تم مزامنة ${totalSynced} عنصر مع ${totalErrors} خطأ`, 'warning');
+            localStorage.setItem('lastSyncTime', this.lastSyncTime);
+            
+            this.isSyncing = false;
+            showNotification('تمت المزامنة', 'تم مزامنة جميع البيانات بنجاح', 'success');
+            
+            // تحديث العرض
+            if (window.dataManager) {
+                updateDashboardStats();
+                renderCasesTable();
+                renderDefendantsTable();
+                renderLawyersTable();
+                renderDeductionsTable();
             }
-
-            this.syncInProgress = false;
-            return true;
-
+            
+            return { success: true, message: 'تمت المزامنة بنجاح' };
+            
         } catch (error) {
             console.error('خطأ في المزامنة:', error);
-            showNotification('خطأ في المزامنة', 'فشلت عملية المزامنة: ' + error.message, 'error');
-            this.syncInProgress = false;
-            return false;
+            this.isSyncing = false;
+            showNotification('خطأ', 'فشلت المزامنة: ' + error.message, 'error');
+            return { success: false, message: error.message };
         }
     }
 
-    // مزامنة الدعاوى
-    async syncCases() {
-        const result = { synced: 0, errors: 0 };
+    // رفع البيانات المحلية
+    async uploadLocalData() {
+        const localData = {
+            userId: this.userId,
+            cases: dataManager.casesData || [],
+            defendants: dataManager.defendantsData || [],
+            lawyers: dataManager.lawyersData || [],
+            deductions: dataManager.deductionsData || [],
+            notifications: dataManager.notificationsData || [],
+            settings: dataManager.settingsData || {},
+            lastModified: new Date().toISOString()
+        };
+
+        // رفع إلى جدول user_data
+        const { data, error } = await this.supabase
+            .from('user_data')
+            .upsert({
+                user_id: this.userId,
+                data: localData,
+                updated_at: new Date().toISOString()
+            }, { 
+                onConflict: 'user_id',
+                returning: 'minimal' 
+            });
+
+        if (error) throw error;
         
-        try {
-            const localCases = dataManager.casesData || [];
-            
-            // جلب البيانات من السحابة
-            const { data: cloudCases, error: fetchError } = await this.supabase
-                .from('cases')
-                .select('*')
-                .eq('user_id', this.userId);
-
-            if (fetchError) throw fetchError;
-
-            // دمج البيانات المحلية مع السحابية
-            const mergedCases = this.mergeCases(localCases, cloudCases || []);
-
-            // رفع البيانات الجديدة أو المحدثة
-            for (const caseItem of mergedCases.toUpload) {
-                const caseData = this.transformCaseForDB(caseItem);
-                caseData.user_id = this.userId;
-                caseData.synced_at = new Date().toISOString();
-                
-                delete caseData.id; // حذف المعرف المحلي
-                
-                const { error } = await this.supabase
-                    .from('cases')
-                    .upsert(caseData, { 
-                        onConflict: 'user_id,case_number',
-                        returning: 'minimal'
-                    });
-
-                if (error) {
-                    console.error('خطأ في رفع الدعوى:', error);
-                    result.errors++;
-                } else {
-                    result.synced++;
-                }
-            }
-
-            // حفظ البيانات المدمجة محلياً
-            dataManager.casesData = mergedCases.final;
-            dataManager.saveData();
-
-            return result;
-
-        } catch (error) {
-            console.error('خطأ في مزامنة الدعاوى:', error);
-            result.errors++;
-            return result;
-        }
+        console.log('تم رفع البيانات المحلية');
     }
 
-    // دمج الدعاوى المحلية والسحابية
-    mergeCases(localCases, cloudCases) {
-        const merged = new Map();
-        const toUpload = [];
+    // تحميل البيانات من السحابة
+    async downloadCloudData() {
+        const { data, error } = await this.supabase
+            .from('user_data')
+            .select('*')
+            .eq('user_id', this.userId)
+            .single();
 
-        // إضافة الدعاوى السحابية
+        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+            throw error;
+        }
+
+        this.cloudData = data?.data || null;
+        console.log('تم تحميل البيانات من السحابة:', this.cloudData ? 'يوجد بيانات' : 'لا توجد بيانات');
+        
+        return this.cloudData;
+    }
+
+    // دمج البيانات (تحديث وليس استبدال)
+    async mergeData() {
+        if (!this.cloudData) {
+            console.log('لا توجد بيانات سحابية للدمج');
+            return;
+        }
+
+        // دمج القضايا
+        if (this.cloudData.cases) {
+            this.mergeCases(this.cloudData.cases);
+        }
+
+        // دمج المدعى عليهم
+        if (this.cloudData.defendants) {
+            this.mergeDefendants(this.cloudData.defendants);
+        }
+
+        // دمج المحامين
+        if (this.cloudData.lawyers) {
+            this.mergeLawyers(this.cloudData.lawyers);
+        }
+
+        // دمج الاستقطاعات
+        if (this.cloudData.deductions) {
+            this.mergeDeductions(this.cloudData.deductions);
+        }
+
+        // دمج الإشعارات
+        if (this.cloudData.notifications) {
+            this.mergeNotifications(this.cloudData.notifications);
+        }
+
+        // دمج الإعدادات
+        if (this.cloudData.settings) {
+            this.mergeSettings(this.cloudData.settings);
+        }
+
+        // حفظ البيانات المدمجة
+        dataManager.saveData();
+        console.log('تم دمج جميع البيانات');
+    }
+
+    // دمج القضايا
+    mergeCases(cloudCases) {
+        const localCases = dataManager.casesData;
+        const mergedCases = [...localCases];
+        
         cloudCases.forEach(cloudCase => {
-            merged.set(cloudCase.case_number, {
-                ...cloudCase,
-                cloudId: cloudCase.id,
-                fromCloud: true
-            });
-        });
-
-        // دمج الدعاوى المحلية
-        localCases.forEach(localCase => {
-            const caseNumber = localCase.caseNumber || localCase.case_number;
-            const existing = merged.get(caseNumber);
+            const existingIndex = mergedCases.findIndex(c => c.id === cloudCase.id);
             
-            if (!existing) {
-                // دعوى محلية جديدة تحتاج للرفع
-                toUpload.push({
-                    ...localCase,
-                    cloud_id: localCase.cloudId || null
-                });
-                merged.set(caseNumber, localCase);
+            if (existingIndex >= 0) {
+                // إذا كانت القضية موجودة، احتفظ بالأحدث
+                const localCase = mergedCases[existingIndex];
+                const cloudDate = new Date(cloudCase.lastUpdate);
+                const localDate = new Date(localCase.lastUpdate);
+                
+                if (cloudDate > localDate) {
+                    mergedCases[existingIndex] = cloudCase;
+                    console.log(`تم تحديث القضية: ${cloudCase.caseNumber}`);
+                }
             } else {
-                // التحقق من أيهما أحدث
-                const localTime = new Date(localCase.lastUpdate || localCase.last_update || localCase.createdAt || localCase.created_at);
-                const cloudTime = new Date(existing.last_update || existing.created_at);
-                
-                if (localTime > cloudTime) {
-                    // البيانات المحلية أحدث
-                    toUpload.push({
-                        ...localCase,
-                        cloud_id: existing.cloudId
-                    });
-                    merged.set(caseNumber, localCase);
-                }
+                // قضية جديدة من السحابة
+                mergedCases.push(cloudCase);
+                console.log(`تمت إضافة قضية جديدة: ${cloudCase.caseNumber}`);
             }
         });
-
-        return {
-            final: Array.from(merged.values()),
-            toUpload
-        };
-    }
-
-    // مزامنة المدعى عليهم
-    async syncDefendants() {
-        const result = { synced: 0, errors: 0 };
         
-        try {
-            const localDefendants = dataManager.defendantsData || [];
-            
-            const { data: cloudDefendants, error: fetchError } = await this.supabase
-                .from('defendants')
-                .select('*')
-                .eq('user_id', this.userId);
-
-            if (fetchError) throw fetchError;
-
-            const mergedDefendants = this.mergeDefendants(localDefendants, cloudDefendants || []);
-
-            for (const defendant of mergedDefendants.toUpload) {
-                const defendantData = this.transformDefendantForDB(defendant);
-                defendantData.user_id = this.userId;
-                defendantData.synced_at = new Date().toISOString();
-                
-                delete defendantData.id;
-                
-                const { error } = await this.supabase
-                    .from('defendants')
-                    .upsert(defendantData, { 
-                        onConflict: 'user_id,name',
-                        returning: 'minimal'
-                    });
-
-                if (error) {
-                    console.error('خطأ في رفع المدعى عليه:', error);
-                    result.errors++;
-                } else {
-                    result.synced++;
-                }
-            }
-
-            dataManager.defendantsData = mergedDefendants.final;
-            dataManager.saveData();
-
-            return result;
-
-        } catch (error) {
-            console.error('خطأ في مزامنة المدعى عليهم:', error);
-            result.errors++;
-            return result;
-        }
+        dataManager.casesData = mergedCases;
+        dataManager.filteredCases = [...mergedCases];
     }
 
-    mergeDefendants(localDefendants, cloudDefendants) {
-        const merged = new Map();
-        const toUpload = [];
-
-        cloudDefendants.forEach(defendant => {
-            merged.set(defendant.name, {
-                ...defendant,
-                cloudId: defendant.id,
-                fromCloud: true
-            });
-        });
-
-        localDefendants.forEach(localDefendant => {
-            const existing = merged.get(localDefendant.name);
+    // دمج المدعى عليهم
+    mergeDefendants(cloudDefendants) {
+        const localDefendants = dataManager.defendantsData;
+        const mergedDefendants = [...localDefendants];
+        
+        cloudDefendants.forEach(cloudDefendant => {
+            const existingIndex = mergedDefendants.findIndex(d => d.id === cloudDefendant.id);
             
-            if (!existing) {
-                toUpload.push({
-                    ...localDefendant,
-                    cloud_id: localDefendant.cloudId || null
-                });
-                merged.set(localDefendant.name, localDefendant);
+            if (existingIndex >= 0) {
+                const localDefendant = mergedDefendants[existingIndex];
+                const cloudDate = new Date(cloudDefendant.createdAt);
+                const localDate = new Date(localDefendant.createdAt);
+                
+                if (cloudDate > localDate) {
+                    mergedDefendants[existingIndex] = cloudDefendant;
+                }
             } else {
-                const localTime = new Date(localDefendant.createdAt);
-                const cloudTime = new Date(existing.created_at);
-                
-                if (localTime > cloudTime) {
-                    toUpload.push({
-                        ...localDefendant,
-                        cloud_id: existing.cloudId
-                    });
-                    merged.set(localDefendant.name, localDefendant);
-                }
+                mergedDefendants.push(cloudDefendant);
             }
         });
-
-        return {
-            final: Array.from(merged.values()),
-            toUpload
-        };
-    }
-
-    // مزامنة المحامين
-    async syncLawyers() {
-        const result = { synced: 0, errors: 0 };
         
-        try {
-            const localLawyers = dataManager.lawyersData || [];
-            
-            const { data: cloudLawyers, error: fetchError } = await this.supabase
-                .from('lawyers')
-                .select('*')
-                .eq('user_id', this.userId);
-
-            if (fetchError) throw fetchError;
-
-            const mergedLawyers = this.mergeLawyers(localLawyers, cloudLawyers || []);
-
-            for (const lawyer of mergedLawyers.toUpload) {
-                const lawyerData = this.transformLawyerForDB(lawyer);
-                lawyerData.user_id = this.userId;
-                lawyerData.synced_at = new Date().toISOString();
-                
-                delete lawyerData.id;
-                
-                const { error } = await this.supabase
-                    .from('lawyers')
-                    .upsert(lawyerData, { 
-                        onConflict: 'user_id,license',
-                        returning: 'minimal'
-                    });
-
-                if (error) {
-                    console.error('خطأ في رفع المحامي:', error);
-                    result.errors++;
-                } else {
-                    result.synced++;
-                }
-            }
-
-            dataManager.lawyersData = mergedLawyers.final;
-            dataManager.saveData();
-
-            return result;
-
-        } catch (error) {
-            console.error('خطأ في مزامنة المحامين:', error);
-            result.errors++;
-            return result;
-        }
+        dataManager.defendantsData = mergedDefendants;
+        dataManager.filteredDefendants = [...mergedDefendants];
     }
 
-    mergeLawyers(localLawyers, cloudLawyers) {
-        const merged = new Map();
-        const toUpload = [];
-
-        cloudLawyers.forEach(lawyer => {
-            merged.set(lawyer.license, {
-                ...lawyer,
-                cloudId: lawyer.id,
-                fromCloud: true
-            });
-        });
-
-        localLawyers.forEach(localLawyer => {
-            const existing = merged.get(localLawyer.license);
+    // دمج المحامين
+    mergeLawyers(cloudLawyers) {
+        const localLawyers = dataManager.lawyersData;
+        const mergedLawyers = [...localLawyers];
+        
+        cloudLawyers.forEach(cloudLawyer => {
+            const existingIndex = mergedLawyers.findIndex(l => l.id === cloudLawyer.id);
             
-            if (!existing) {
-                toUpload.push({
-                    ...localLawyer,
-                    cloud_id: localLawyer.cloudId || null
-                });
-                merged.set(localLawyer.license, localLawyer);
+            if (existingIndex >= 0) {
+                const localLawyer = mergedLawyers[existingIndex];
+                const cloudDate = new Date(cloudLawyer.createdAt);
+                const localDate = new Date(localLawyer.createdAt);
+                
+                if (cloudDate > localDate) {
+                    mergedLawyers[existingIndex] = cloudLawyer;
+                }
             } else {
-                const localTime = new Date(localLawyer.registrationDate);
-                const cloudTime = new Date(existing.registration_date);
+                mergedLawyers.push(cloudLawyer);
+            }
+        });
+        
+        dataManager.lawyersData = mergedLawyers;
+        dataManager.filteredLawyers = [...mergedLawyers];
+    }
+
+    // دمج الاستقطاعات
+    mergeDeductions(cloudDeductions) {
+        const localDeductions = dataManager.deductionsData;
+        const mergedDeductions = [...localDeductions];
+        
+        cloudDeductions.forEach(cloudDeduction => {
+            const existingIndex = mergedDeductions.findIndex(d => d.id === cloudDeduction.id);
+            
+            if (existingIndex >= 0) {
+                const localDeduction = mergedDeductions[existingIndex];
+                const cloudDate = new Date(cloudDeduction.createdAt);
+                const localDate = new Date(localDeduction.createdAt);
                 
-                if (localTime > cloudTime) {
-                    toUpload.push({
-                        ...localLawyer,
-                        cloud_id: existing.cloudId
-                    });
-                    merged.set(localLawyer.license, localLawyer);
+                if (cloudDate > localDate) {
+                    mergedDeductions[existingIndex] = cloudDeduction;
                 }
-            }
-        });
-
-        return {
-            final: Array.from(merged.values()),
-            toUpload
-        };
-    }
-
-    // مزامنة الاستقطاعات
-    async syncDeductions() {
-        const result = { synced: 0, errors: 0 };
-        
-        try {
-            const localDeductions = dataManager.deductionsData || [];
-            
-            const { data: cloudDeductions, error: fetchError } = await this.supabase
-                .from('deductions')
-                .select('*')
-                .eq('user_id', this.userId);
-
-            if (fetchError) throw fetchError;
-
-            const mergedDeductions = this.mergeDeductions(localDeductions, cloudDeductions || []);
-
-            for (const deduction of mergedDeductions.toUpload) {
-                const deductionData = this.transformDeductionForDB(deduction);
-                deductionData.user_id = this.userId;
-                deductionData.synced_at = new Date().toISOString();
-                
-                delete deductionData.id;
-                
-                const { error } = await this.supabase
-                    .from('deductions')
-                    .insert(deductionData);
-
-                if (error) {
-                    console.error('خطأ في رفع الاستقطاع:', error);
-                    result.errors++;
-                } else {
-                    result.synced++;
-                }
-            }
-
-            dataManager.deductionsData = mergedDeductions.final;
-            dataManager.saveData();
-
-            return result;
-
-        } catch (error) {
-            console.error('خطأ في مزامنة الاستقطاعات:', error);
-            result.errors++;
-            return result;
-        }
-    }
-
-    mergeDeductions(localDeductions, cloudDeductions) {
-        const merged = new Map();
-        const toUpload = [];
-
-        cloudDeductions.forEach(deduction => {
-            const key = `${deduction.case_number}_${deduction.date}_${deduction.amount}`;
-            merged.set(key, {
-                ...deduction,
-                cloudId: deduction.id,
-                fromCloud: true
-            });
-        });
-
-        localDeductions.forEach(localDeduction => {
-            const caseNumber = localDeduction.caseNumber || localDeduction.case_number;
-            const key = `${caseNumber}_${localDeduction.date}_${localDeduction.amount}`;
-            const existing = merged.get(key);
-            
-            if (!existing) {
-                toUpload.push({
-                    ...localDeduction,
-                    cloud_id: localDeduction.cloudId || null
-                });
-                merged.set(key, localDeduction);
-            }
-        });
-
-        return {
-            final: Array.from(merged.values()),
-            toUpload
-        };
-    }
-
-    // مزامنة الإشعارات
-    async syncNotifications() {
-        const result = { synced: 0, errors: 0 };
-        
-        try {
-            const localNotifications = dataManager.notificationsData || [];
-            
-            const { data: cloudNotifications, error: fetchError } = await this.supabase
-                .from('notifications')
-                .select('*')
-                .eq('user_id', this.userId)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            if (fetchError) throw fetchError;
-
-            // دمج الإشعارات
-            const allNotifications = [...localNotifications];
-            
-            (cloudNotifications || []).forEach(cloudNotif => {
-                if (!allNotifications.find(n => n.cloudId === cloudNotif.id)) {
-                    allNotifications.push({
-                        ...cloudNotif,
-                        cloudId: cloudNotif.id,
-                        fromCloud: true
-                    });
-                }
-            });
-
-            // ترتيب حسب التاريخ والاحتفاظ بآخر 50
-            allNotifications.sort((a, b) => 
-                new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at)
-            );
-            
-            dataManager.notificationsData = allNotifications.slice(0, 50);
-            dataManager.saveData();
-            
-            result.synced = allNotifications.length;
-            return result;
-
-        } catch (error) {
-            console.error('خطأ في مزامنة الإشعارات:', error);
-            result.errors++;
-            return result;
-        }
-    }
-
-    // تحويل بيانات الدعوى للتوافق مع قاعدة البيانات
-    transformCaseForDB(caseData) {
-        const transformed = {
-            case_number: caseData.caseNumber || caseData.case_number,
-            file_date: caseData.fileDate || caseData.file_date,
-            priority: caseData.priority,
-            status: caseData.status,
-            subject: caseData.subject,
-            amount: caseData.amount,
-            plaintiff_name: caseData.plaintiffName || caseData.plaintiff_name,
-            plaintiff_phone: caseData.plaintiffPhone || caseData.plaintiff_phone,
-            plaintiff_address: caseData.plaintiffAddress || caseData.plaintiff_address,
-            defendant_name: caseData.defendantName || caseData.defendant_name,
-            defendant_address: caseData.defendantAddress || caseData.defendant_address,
-            lawyer_name: caseData.lawyerName || caseData.lawyer_name,
-            court_name: caseData.courtName || caseData.court_name,
-            court_section: caseData.courtSection || caseData.court_section,
-            stage: caseData.stage,
-            next_hearing: caseData.nextHearing || caseData.next_hearing,
-            notes: caseData.notes,
-            documents: caseData.documents,
-            execution_options: caseData.executionOptions || caseData.execution_options,
-            deductions: caseData.deductions,
-            timeline: caseData.timeline,
-            created_at: caseData.createdAt || caseData.created_at,
-            last_update: caseData.lastUpdate || caseData.last_update
-        };
-        
-        // إزالة القيم الفارغة
-        Object.keys(transformed).forEach(key => {
-            if (transformed[key] === undefined) {
-                delete transformed[key];
-            }
-        });
-        
-        return transformed;
-    }
-
-    // تحويل بيانات المدعى عليه للتوافق مع قاعدة البيانات
-    transformDefendantForDB(defendantData) {
-        const transformed = {
-            name: defendantData.name,
-            phone: defendantData.phone,
-            email: defendantData.email,
-            workplace: defendantData.workplace,
-            address: defendantData.address,
-            cases_count: defendantData.casesCount || defendantData.cases_count || 0,
-            registration_date: defendantData.registrationDate || defendantData.registration_date,
-            created_at: defendantData.createdAt || defendantData.created_at
-        };
-        
-        // إزالة القيم الفارغة
-        Object.keys(transformed).forEach(key => {
-            if (transformed[key] === undefined) {
-                delete transformed[key];
-            }
-        });
-        
-        return transformed;
-    }
-
-    // تحويل بيانات المحامي للتوافق مع قاعدة البيانات
-    transformLawyerForDB(lawyerData) {
-        const transformed = {
-            name: lawyerData.name,
-            license: lawyerData.license,
-            phone: lawyerData.phone,
-            specialization: lawyerData.specialization,
-            email: lawyerData.email,
-            experience: lawyerData.experience,
-            address: lawyerData.address,
-            notes: lawyerData.notes,
-            cases_count: lawyerData.casesCount || lawyerData.cases_count || 0,
-            registration_date: lawyerData.registrationDate || lawyerData.registration_date,
-            created_at: lawyerData.createdAt || lawyerData.created_at
-        };
-        
-        // إزالة القيم الفارغة
-        Object.keys(transformed).forEach(key => {
-            if (transformed[key] === undefined) {
-                delete transformed[key];
-            }
-        });
-        
-        return transformed;
-    }
-
-    // تحويل بيانات الاستقطاع للتوافق مع قاعدة البيانات
-    transformDeductionForDB(deductionData) {
-        const transformed = {
-            plaintiff_name: deductionData.plaintiffName || deductionData.plaintiff_name,
-            case_number: deductionData.caseNumber || deductionData.case_number,
-            amount: deductionData.amount,
-            date: deductionData.date,
-            source: deductionData.source,
-            notes: deductionData.notes,
-            status: deductionData.status,
-            created_at: deductionData.createdAt || deductionData.created_at
-        };
-        
-        // إزالة القيم الفارغة
-        Object.keys(transformed).forEach(key => {
-            if (transformed[key] === undefined) {
-                delete transformed[key];
-            }
-        });
-        
-        return transformed;
-    }
-
-    // مزامنة الإعدادات
-    async syncSettings() {
-        const result = { synced: 0, errors: 0 };
-        
-        try {
-            const localSettings = dataManager.settingsData || {};
-            
-            const { data: cloudSettings, error: fetchError } = await this.supabase
-                .from('settings')
-                .select('*')
-                .eq('user_id', this.userId)
-                .single();
-
-            if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
-
-            if (cloudSettings) {
-                // دمج الإعدادات
-                dataManager.settingsData = {
-                    ...cloudSettings.settings_json,
-                    ...localSettings
-                };
             } else {
-                // رفع الإعدادات المحلية
-                const { error } = await this.supabase
-                    .from('settings')
-                    .insert({
-                        user_id: this.userId,
-                        settings_json: localSettings,
-                        updated_at: new Date().toISOString()
-                    });
-
-                if (error) throw error;
+                mergedDeductions.push(cloudDeduction);
             }
-
-            dataManager.saveData();
-            result.synced = 1;
-            return result;
-
-        } catch (error) {
-            console.error('خطأ في مزامنة الإعدادات:', error);
-            result.errors++;
-            return result;
-        }
-    }
-
-    // حفظ التغييرات المعلقة
-    async savePendingChanges() {
-        const pending = LocalStorage.load('pendingSync', []);
-        if (pending.length === 0) return;
-
-        try {
-            for (const change of pending) {
-                await this.syncSingleItem(change);
-            }
-            LocalStorage.save('pendingSync', []);
-        } catch (error) {
-            console.error('خطأ في حفظ التغييرات المعلقة:', error);
-        }
-    }
-
-    // مزامنة عنصر واحد
-    async syncSingleItem(item) {
-        if (!this.supabase || !this.userId) return;
-
-        try {
-            const { error } = await this.supabase
-                .from(item.table)
-                .upsert({
-                    ...item.data,
-                    user_id: this.userId,
-                    synced_at: new Date().toISOString()
-                });
-
-            if (error) throw error;
-        } catch (error) {
-            console.error('خطأ في مزامنة العنصر:', error);
-            // إضافة للقائمة المعلقة
-            const pending = LocalStorage.load('pendingSync', []);
-            pending.push(item);
-            LocalStorage.save('pendingSync', pending);
-        }
-    }
-
-    // تمكين/تعطيل المزامنة
-    toggleSync(enabled) {
-        this.syncEnabled = enabled;
-        this.saveSyncSettings();
+        });
         
-        if (enabled && this.isOnline) {
-            this.syncAllData();
+        dataManager.deductionsData = mergedDeductions;
+        dataManager.filteredDeductions = [...mergedDeductions];
+    }
+
+    // دمج الإشعارات
+    mergeNotifications(cloudNotifications) {
+        const localNotifications = dataManager.notificationsData;
+        const mergedNotifications = [...localNotifications];
+        
+        cloudNotifications.forEach(cloudNotification => {
+            const exists = mergedNotifications.some(n => n.id === cloudNotification.id);
+            if (!exists) {
+                mergedNotifications.push(cloudNotification);
+            }
+        });
+        
+        // الاحتفاظ بآخر 50 إشعار فقط
+        dataManager.notificationsData = mergedNotifications
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .slice(0, 50);
+    }
+
+    // دمج الإعدادات
+    mergeSettings(cloudSettings) {
+        dataManager.settingsData = {
+            ...dataManager.settingsData,
+            ...cloudSettings
+        };
+    }
+
+    // تنزيل البيانات فقط (استيراد كامل)
+    async downloadOnly() {
+        try {
+            showNotification('التحميل', 'جاري تحميل البيانات من السحابة...', 'info');
+            
+            await this.downloadCloudData();
+            
+            if (!this.cloudData) {
+                showNotification('تحذير', 'لا توجد بيانات في السحابة', 'warning');
+                return { success: false, message: 'لا توجد بيانات' };
+            }
+
+            // استبدال البيانات المحلية بالكامل
+            if (this.cloudData.cases) dataManager.casesData = this.cloudData.cases;
+            if (this.cloudData.defendants) dataManager.defendantsData = this.cloudData.defendants;
+            if (this.cloudData.lawyers) dataManager.lawyersData = this.cloudData.lawyers;
+            if (this.cloudData.deductions) dataManager.deductionsData = this.cloudData.deductions;
+            if (this.cloudData.notifications) dataManager.notificationsData = this.cloudData.notifications;
+            if (this.cloudData.settings) dataManager.settingsData = this.cloudData.settings;
+            
+            // تحديث المصفوفات المفلترة
+            dataManager.filteredCases = [...dataManager.casesData];
+            dataManager.filteredDefendants = [...dataManager.defendantsData];
+            dataManager.filteredLawyers = [...dataManager.lawyersData];
+            dataManager.filteredDeductions = [...dataManager.deductionsData];
+            
+            dataManager.saveData();
+            
+            // تحديث العرض
+            updateDashboardStats();
+            renderCasesTable();
+            renderDefendantsTable();
+            renderLawyersTable();
+            renderDeductionsTable();
+            
+            showNotification('تم التحميل', 'تم تحميل البيانات من السحابة بنجاح', 'success');
+            return { success: true, message: 'تم التحميل بنجاح' };
+            
+        } catch (error) {
+            console.error('خطأ في التحميل:', error);
+            showNotification('خطأ', 'فشل التحميل: ' + error.message, 'error');
+            return { success: false, message: error.message };
         }
     }
 
-    // تمكين/تعطيل المزامنة التلقائية
-    toggleAutoSync(enabled, intervalMinutes = 30) {
-        this.autoSync = enabled;
-        this.syncInterval = intervalMinutes;
-        this.saveSyncSettings();
+    // رفع البيانات فقط (نسخ احتياطي)
+    async uploadOnly() {
+        try {
+            showNotification('الرفع', 'جاري رفع البيانات إلى السحابة...', 'info');
+            await this.uploadLocalData();
+            showNotification('تم الرفع', 'تم رفع البيانات إلى السحابة بنجاح', 'success');
+            return { success: true, message: 'تم الرفع بنجاح' };
+        } catch (error) {
+            console.error('خطأ في الرفع:', error);
+            showNotification('خطأ', 'فشل الرفع: ' + error.message, 'error');
+            return { success: false, message: error.message };
+        }
+    }
+
+    // بدء المزامنة التلقائية
+    startAutoSync() {
+        if (this.autoSyncTimer) {
+            clearInterval(this.autoSyncTimer);
+        }
+        
+        this.autoSyncTimer = setInterval(() => {
+            console.log('مزامنة تلقائية...');
+            this.syncAll();
+        }, this.autoSyncInterval);
+        
+        console.log(`تم بدء المزامنة التلقائية كل ${this.autoSyncInterval / 1000} ثانية`);
+    }
+
+    // إيقاف المزامنة التلقائية
+    stopAutoSync() {
+        if (this.autoSyncTimer) {
+            clearInterval(this.autoSyncTimer);
+            this.autoSyncTimer = null;
+        }
+        console.log('تم إيقاف المزامنة التلقائية');
+    }
+
+    // تبديل المزامنة التلقائية
+    toggleAutoSync(enabled) {
+        this.autoSyncEnabled = enabled;
+        localStorage.setItem('autoSyncEnabled', enabled.toString());
         
         if (enabled) {
-            this.setupAutoSync(intervalMinutes);
-        } else if (this.autoSyncInterval) {
-            clearInterval(this.autoSyncInterval);
+            this.startAutoSync();
+        } else {
+            this.stopAutoSync();
         }
     }
 
     // الحصول على حالة المزامنة
     getSyncStatus() {
         return {
-            enabled: this.syncEnabled,
-            autoSync: this.autoSync,
-            isOnline: this.isOnline,
-            lastSync: this.lastSyncTime,
-            inProgress: this.syncInProgress,
+            isSyncing: this.isSyncing,
+            lastSyncTime: this.lastSyncTime,
+            autoSyncEnabled: this.autoSyncEnabled,
             userId: this.userId
         };
     }
 
-    // مسح البيانات السحابية
-    async clearCloudData() {
-        if (!this.supabase || !this.userId) return false;
-
-        if (!confirm('هل أنت متأكد من حذف جميع البيانات السحابية؟ لا يمكن التراجع عن هذا الإجراء.')) {
-            return false;
+    // حذف البيانات السحابية
+    async deleteCloudData() {
+        if (!confirm('هل أنت متأكد من حذف جميع البيانات من السحابة؟ هذا الإجراء لا يمكن التراجع عنه!')) {
+            return { success: false, message: 'تم الإلغاء' };
         }
 
         try {
-            const tables = ['cases', 'defendants', 'lawyers', 'deductions', 'notifications', 'settings'];
-            
-            for (const table of tables) {
-                const { error } = await this.supabase
-                    .from(table)
-                    .delete()
-                    .eq('user_id', this.userId);
-                    
-                if (error) {
-                    console.error(`خطأ في حذف ${table}:`, error);
-                }
-            }
+            const { error } = await this.supabase
+                .from('user_data')
+                .delete()
+                .eq('user_id', this.userId);
 
-            showNotification('تم الحذف', 'تم حذف جميع البيانات السحابية بنجاح', 'success');
-            return true;
+            if (error) throw error;
 
+            showNotification('تم الحذف', 'تم حذف البيانات من السحابة', 'success');
+            return { success: true, message: 'تم الحذف بنجاح' };
         } catch (error) {
-            console.error('خطأ في مسح البيانات السحابية:', error);
-            showNotification('خطأ', 'فشل حذف البيانات السحابية', 'error');
-            return false;
+            console.error('خطأ في الحذف:', error);
+            showNotification('خطأ', 'فشل الحذف: ' + error.message, 'error');
+            return { success: false, message: error.message };
         }
     }
 }
 
-// إنشاء نسخة واحدة من SupabaseSync
+// إنشاء نسخة عامة من SupabaseSync
 window.supabaseSync = new SupabaseSync();
+
+// واجهة المستخدم للمزامنة
+function showSyncPanel() {
+    const status = window.supabaseSync.getSyncStatus();
+    
+    const content = `
+        <div style="min-width: 500px;">
+            <div style="background: var(--gray-50); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fas fa-cloud"></i>
+                    حالة المزامنة
+                </h3>
+                <div style="display: grid; gap: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>معرف المستخدم:</span>
+                        <strong style="font-family: monospace; font-size: 0.875rem;">${status.userId}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>آخر مزامنة:</span>
+                        <strong>${status.lastSyncTime ? new Date(status.lastSyncTime).toLocaleString('ar-EG') : 'لم تتم المزامنة بعد'}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>المزامنة التلقائية:</span>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" id="auto-sync-toggle" ${status.autoSyncEnabled ? 'checked' : ''} 
+                                   onchange="window.supabaseSync.toggleAutoSync(this.checked)">
+                            <span>${status.autoSyncEnabled ? 'مفعّلة' : 'معطّلة'}</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; gap: 1rem;">
+                <button class="btn btn-primary" onclick="handleSyncAction('sync')" ${status.isSyncing ? 'disabled' : ''}>
+                    <i class="fas fa-sync"></i>
+                    ${status.isSyncing ? 'جاري المزامنة...' : 'مزامنة البيانات (رفع + تحميل)'}
+                </button>
+                
+                <button class="btn btn-success" onclick="handleSyncAction('upload')">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    رفع البيانات فقط (نسخ احتياطي)
+                </button>
+                
+                <button class="btn btn-secondary" onclick="handleSyncAction('download')">
+                    <i class="fas fa-cloud-download-alt"></i>
+                    تحميل البيانات فقط (استبدال)
+                </button>
+                
+                <button class="btn btn-danger" onclick="handleSyncAction('delete')">
+                    <i class="fas fa-trash"></i>
+                    حذف البيانات من السحابة
+                </button>
+            </div>
+
+            <div style="margin-top: 1.5rem; padding: 1rem; background: var(--primary-blue-light); border-radius: 0.5rem; font-size: 0.875rem;">
+                <strong>ملاحظة:</strong> 
+                <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.6;">
+                    <li><strong>المزامنة:</strong> تدمج البيانات المحلية والسحابية (يحتفظ بالأحدث)</li>
+                    <li><strong>الرفع:</strong> ينسخ البيانات المحلية إلى السحابة فقط</li>
+                    <li><strong>التحميل:</strong> يستبدل البيانات المحلية بالبيانات السحابية</li>
+                </ul>
+            </div>
+        </div>
+    `;
+
+    createModal('إدارة المزامنة السحابية', content);
+}
+
+async function handleSyncAction(action) {
+    let result;
+    
+    switch (action) {
+        case 'sync':
+            result = await window.supabaseSync.syncAll();
+            break;
+        case 'upload':
+            result = await window.supabaseSync.uploadOnly();
+            break;
+        case 'download':
+            result = await window.supabaseSync.downloadOnly();
+            break;
+        case 'delete':
+            result = await window.supabaseSync.deleteCloudData();
+            break;
+    }
+    
+    if (result && result.success) {
+        // تحديث لوحة المزامنة
+        closeModal(event.target);
+        setTimeout(() => showSyncPanel(), 500);
+    }
+}
+
+// إضافة زر المزامنة إلى الواجهة
+document.addEventListener('DOMContentLoaded', function() {
+    // إضافة زر في قسم الإعدادات
+    const settingsContent = document.getElementById('settings-content');
+    if (settingsContent) {
+        const syncCard = document.createElement('div');
+        syncCard.className = 'card';
+        syncCard.style.gridColumn = '1 / -1';
+        syncCard.innerHTML = `
+            <h3>
+                <i class="fas fa-cloud"></i>
+                المزامنة السحابية
+            </h3>
+            <p style="color: var(--gray-600); margin-bottom: 1.5rem;">
+                قم بمزامنة بياناتك عبر الأجهزة المختلفة باستخدام التخزين السحابي
+            </p>
+            <button class="btn btn-primary" onclick="showSyncPanel()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                فتح لوحة المزامنة
+            </button>
+        `;
+        
+        const grid = settingsContent.querySelector('.grid-2');
+        if (grid) {
+            grid.appendChild(syncCard);
+        }
+    }
+
+    // إضافة زر سريع في الهيدر
+    const headerRight = document.querySelector('.header-right');
+    if (headerRight) {
+        const syncButton = document.createElement('button');
+        syncButton.className = 'btn btn-secondary';
+        syncButton.style.padding = '0.75rem 1rem';
+        syncButton.innerHTML = '<i class="fas fa-cloud"></i> مزامنة';
+        syncButton.onclick = () => window.supabaseSync.syncAll();
+        headerRight.insertBefore(syncButton, headerRight.firstChild);
+    }
+});
+
+console.log('تم تحميل نظام المزامنة السحابية');
