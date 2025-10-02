@@ -23,13 +23,14 @@ class AdvancedFirebaseManager {
         
         // إعدادات Firebase
         this.firebaseConfig = {
-    apiKey: "AIzaSyDrZmZwSOVhonbLWGrHnctkV4tUcT7UNZM",
-    authDomain: "legal-department-dbd28.firebaseapp.com",
-    projectId: "legal-department-dbd28",
-    storageBucket: "legal-department-dbd28.firebasestorage.app",
-    messagingSenderId: "452600951683",
-    appId: "1:452600951683:web:2929d22d53a309d947fcb6"
-  };
+  apiKey: "AIzaSyDrZmZwSOVhonbLWGrHnctkV4tUcT7UNZM",
+  authDomain: "legal-department-dbd28.firebaseapp.com",
+  databaseURL: "https://legal-department-dbd28-default-rtdb.firebaseio.com",
+  projectId: "legal-department-dbd28",
+  storageBucket: "legal-department-dbd28.firebasestorage.app",
+  messagingSenderId: "452600951683",
+  appId: "1:452600951683:web:2929d22d53a309d947fcb6"
+}; 
 
         this.changeTypes = {
             CREATE: 'create',
@@ -623,17 +624,16 @@ class AdvancedFirebaseManager {
                     case this.changeTypes.CREATE:
                     case this.changeTypes.UPDATE:
                         if (Array.isArray(change.data)) {
-                            const arrayData = {};
-                            change.data.forEach((item, index) => {
+                            change.data.forEach((item) => {
                                 if (item && typeof item === 'object' && item.id) {
-                                    arrayData[`item_${item.id}`] = {
+                                    // استخدم مفتاح العنصر مباشرة بدون "item_" ليتوافق مع صفحة المحامي
+                                    updates[`${path}/${item.id}`] = {
                                         ...item,
                                         lastSync: timestamp,
                                         syncVersion: '4.0'
                                     };
                                 }
                             });
-                            updates[path] = arrayData;
                         } else if (typeof change.data === 'object') {
                             updates[path] = {
                                 ...change.data,
@@ -644,7 +644,12 @@ class AdvancedFirebaseManager {
                         break;
                         
                     case this.changeTypes.DELETE:
-                        updates[path] = null;
+                        // للحذف، نحتاج معرف العنصر المحدد
+                        if (change.data && change.data.id) {
+                            updates[`${path}/${change.data.id}`] = null;
+                        } else {
+                            updates[path] = null;
+                        }
                         break;
                 }
 

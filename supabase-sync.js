@@ -1,899 +1,1169 @@
-/**
- * نظام المزامنة الشامل مع Supabase
- * يدعم المزامنة في الوقت الحقيقي لجميع بيانات التطبيق
- */
+// supabase-sync-complete.js
+// نظام المزامنة الكاملة مع Supabase
 
-// إعدادات Supabase
-const SUPABASE_CONFIG = {
-    url: 'https://dopzopezvkwdoeeliwwd.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcHpvcGV6dmt3ZG9lZWxpd3dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMzg2MDQsImV4cCI6MjA3NDgxNDYwNH0.VZjhi0-tx5EvFwEXUfjCWyMujwbvGrGisSeOdYm0Rnk'
-};
-
-// تحميل مكتبة Supabase
-const SUPABASE_SCRIPT = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-
-class SupabaseSyncManager {
+class SupabaseSyncComplete {
     constructor() {
-        this.supabase = null;
-        this.isInitialized = false;
+        this.supabaseUrl = 'https://dopzopezvkwdoeeliwwd.supabase.co';
+        this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcHpvcGV6dmt3ZG9lZWxpd3dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMzg2MDQsImV4cCI6MjA3NDgxNDYwNH0.VZjhi0-tx5EvFwEXUfjCWyMujwbvGrGisSeOdYm0Rnk';
+
+        this.userId = this.getUserId();
         this.isSyncing = false;
-        this.lastSyncTime = null;
-        this.syncInterval = null;
-        this.realtimeSubscriptions = [];
-        
-        // أسماء الجداول في Supabase
-        this.tables = {
-            cases: 'legal_cases',
-            defendants: 'defendants',
-            lawyers: 'lawyers',
-            deductions: 'deductions',
-            notifications: 'notifications',
-            settings: 'app_settings',
-            sync_metadata: 'sync_metadata'
-        };
+        this.lastSyncTime = localStorage.getItem('lastSyncTime') || null;
+
+        this.loadSupabaseClient().then(() => {
+            // مزامنة تلقائية عند تحميل التطبيق
+            this.autoSyncOnLoad();
+            // إضافة مؤشر حالة المزامنة
+            this.addSyncStatusIndicator();
+        });
     }
 
-    /**
-     * تهيئة الاتصال بـ Supabase
-     */
-    async initialize() {
-        try {
-            // تحميل مكتبة Supabase إذا لم تكن محملة
-            if (typeof supabase === 'undefined') {
-                await this.loadSupabaseLibrary();
-            }
+    // إضافة مؤشر حالة المزامنة
+    addSyncStatusIndicator() {
+        // إضافة مؤشر في الهيدر
+        const headerRight = document.querySelector('.header-right');
+        if (headerRight && !document.getElementById('sync-status-indicator')) {
+            const indicator = document.createElement('div');
+            indicator.id = 'sync-status-indicator';
+            indicator.style.cssText = `
+                padding: 0.5rem 1rem;
+                border-radius: 20px;
+                font-size: 0.75rem;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                background: var(--gray-100);
+                color: var(--gray-600);
+            `;
+            indicator.innerHTML = '<i class="fas fa-sync-alt"></i><span>جاري التحميل...</span>';
+            indicator.onclick = () => this.showSyncStatusDetails();
 
-            // إنشاء عميل Supabase
-            this.supabase = window.supabase.createClient(
-                SUPABASE_CONFIG.url,
-                SUPABASE_CONFIG.anonKey
-            );
+            headerRight.insertBefore(indicator, headerRight.firstChild);
 
-            this.isInitialized = true;
-            console.log('✅ تم تهيئة الاتصال بـ Supabase بنجاح');
-            
-            // التحقق من وجود الجداول وإنشائها إذا لزم الأمر
-            await this.ensureTablesExist();
-            
-            // تحميل آخر وقت مزامنة
-            this.loadLastSyncTime();
-            
-            return true;
-        } catch (error) {
-            console.error('❌ خطأ في تهيئة Supabase:', error);
-            throw error;
+            // تحديث الحالة كل 5 ثوانِ
+            setInterval(() => this.updateSyncStatusIndicator(), 5000);
         }
     }
 
-    /**
-     * تحميل مكتبة Supabase ديناميكياً
-     */
-    loadSupabaseLibrary() {
-        return new Promise((resolve, reject) => {
-            if (window.supabase) {
-                resolve();
-                return;
-            }
+    // تحديث مؤشر حالة المزامنة
+    updateSyncStatusIndicator() {
+        const indicator = document.getElementById('sync-status-indicator');
+        if (!indicator) return;
 
+        const hasLocalData = this.checkForLocalData();
+        const isOnline = navigator.onLine;
+
+        if (this.isSyncing) {
+            indicator.style.background = 'var(--warning-yellow-light)';
+            indicator.style.color = 'var(--warning-yellow)';
+            indicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i><span>جاري المزامنة...</span>';
+        } else if (!isOnline) {
+            indicator.style.background = 'var(--error-red-light)';
+            indicator.style.color = 'var(--error-red)';
+            indicator.innerHTML = '<i class="fas fa-wifi-slash"></i><span>غير متصل</span>';
+        } else if (hasLocalData) {
+            indicator.style.background = 'var(--success-green-light)';
+            indicator.style.color = 'var(--success-green)';
+            indicator.innerHTML = '<i class="fas fa-check-circle"></i><span>متزامن</span>';
+        } else {
+            indicator.style.background = 'var(--primary-blue-light)';
+            indicator.style.color = 'var(--primary-blue)';
+            indicator.innerHTML = '<i class="fas fa-cloud-download-alt"></i><span>بحاجة للتحميل</span>';
+        }
+    }
+
+    // إظهار تفاصيل حالة المزامنة
+    showSyncStatusDetails() {
+        const hasLocalData = this.checkForLocalData();
+        const status = this.getSyncStatus();
+
+        const content = `
+            <div style="padding: 1rem;">
+                <div style="display: grid; gap: 1rem; margin-bottom: 2rem;">
+                    <div style="display: flex; justify-content: space-between; padding: 0.75rem; background: var(--gray-50); border-radius: 0.5rem;">
+                        <span>حالة الاتصال:</span>
+                        <strong style="color: ${navigator.onLine ? 'var(--success-green)' : 'var(--error-red)'};">
+                            ${navigator.onLine ? 'متصل' : 'غير متصل'}
+                        </strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 0.75rem; background: var(--gray-50); border-radius: 0.5rem;">
+                        <span>البيانات المحلية:</span>
+                        <strong style="color: ${hasLocalData ? 'var(--success-green)' : 'var(--warning-yellow)'};">
+                            ${hasLocalData ? 'موجودة' : 'غير موجودة'}
+                        </strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 0.75rem; background: var(--gray-50); border-radius: 0.5rem;">
+                        <span>حالة المزامنة:</span>
+                        <strong style="color: ${this.isSyncing ? 'var(--warning-yellow)' : 'var(--success-green)'};">
+                            ${this.isSyncing ? 'جاري المزامنة' : 'جاهز'}
+                        </strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 0.75rem; background: var(--gray-50); border-radius: 0.5rem;">
+                        <span>آخر مزامنة:</span>
+                        <strong>
+                            ${status.lastSyncTime ? new Date(status.lastSyncTime).toLocaleString('ar-SA') : 'لم تتم'}
+                        </strong>
+                    </div>
+                </div>
+                
+                <div style="display: grid; gap: 1rem;">
+                    <button class="btn btn-primary" onclick="window.supabaseSync.syncAll(); closeModal(this);">
+                        <i class="fas fa-sync-alt"></i>
+                        مزامنة الآن
+                    </button>
+                    ${!hasLocalData ? `
+                    <button class="btn btn-secondary" onclick="retryDataDownload(); closeModal(this);">
+                        <i class="fas fa-cloud-download-alt"></i>
+                        تحميل البيانات
+                    </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        if (typeof createModal === 'function') {
+            createModal('حالة المزامنة', content);
+        }
+    }
+
+    async loadSupabaseClient() {
+        if (window.supabase) {
+            this.initializeClient();
+            return;
+        }
+
+        return new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = SUPABASE_SCRIPT;
+            script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
             script.onload = () => {
-                console.log('✅ تم تحميل مكتبة Supabase');
+                this.initializeClient();
                 resolve();
             };
-            script.onerror = () => {
-                reject(new Error('فشل تحميل مكتبة Supabase'));
-            };
+            script.onerror = reject;
             document.head.appendChild(script);
         });
     }
 
-    /**
-     * التحقق من وجود الجداول
-     */
-    async ensureTablesExist() {
-        try {
-            // ملاحظة: في الإنتاج الحقيقي، يجب إنشاء الجداول من لوحة تحكم Supabase
-            // هذه الدالة تتحقق فقط من الوصول إلى الجداول
-            const { data, error } = await this.supabase
-                .from(this.tables.cases)
-                .select('count')
-                .limit(1);
+    initializeClient() {
+        this.supabase = window.supabase.createClient(this.supabaseUrl, this.supabaseKey);
+        console.log('✓ تم الاتصال بـ Supabase');
+    }
 
-            if (error && error.code === '42P01') {
-                console.warn('⚠️ الجداول غير موجودة. يجب إنشاؤها من لوحة تحكم Supabase');
+    getUserId() {
+        let userId = localStorage.getItem('syncUserId');
+        if (!userId) {
+            userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('syncUserId', userId);
+        }
+        return userId;
+    }
+
+    // التحقق من حالة الاتصال وقاعدة البيانات
+    async checkConnectionAndData() {
+        try {
+            console.log('🔍 فحص حالة الاتصال وقاعدة البيانات...');
+
+            if (!this.supabase) {
+                await this.loadSupabaseClient();
+            }
+
+            const { data, error } = await this.supabase
+                .from('cases')
+                .select('*')
+                .limit(100);
+
+            if (error) {
+                console.error('❌ خطأ في الاتصال بقاعدة البيانات:', error);
                 return false;
             }
 
+            console.log('✅ الاتصال بقاعدة البيانات يعمل بشكل صحيح');
             return true;
         } catch (error) {
-            console.error('خطأ في التحقق من الجداول:', error);
+            console.error('❌ خطأ في فحص الاتصال:', error);
             return false;
         }
     }
 
-    /**
-     * مزامنة شاملة - رفع وتنزيل جميع البيانات
-     */
-    async fullSync(showNotifications = true) {
-        if (!this.isInitialized) {
-            await this.initialize();
-        }
+    // دالة لإعادة المحاولة التلقائية
+    async retryDownload(maxRetries = 3) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🔄 المحاولة ${attempt} من ${maxRetries} لتحميل البيانات...`);
 
-        if (this.isSyncing) {
-            console.warn('⚠️ المزامنة جارية بالفعل');
-            return;
+                const connectionOk = await this.checkConnectionAndData();
+                if (!connectionOk) {
+                    throw new Error('فشل الاتصال بقاعدة البيانات');
+                }
+
+                await this.downloadAllData();
+                this.refreshUI();
+
+                console.log(`✅ نجحت المحاولة ${attempt} - تم تحميل البيانات`);
+                return true;
+
+            } catch (error) {
+                console.error(`❌ فشلت المحاولة ${attempt}:`, error);
+
+                if (attempt < maxRetries) {
+                    const delay = attempt * 2000; // تأخير متزايد
+                    console.log(`⏳ انتظار ${delay / 1000} ثانية قبل المحاولة التالية...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                    console.error('❌ فشلت جميع المحاولات');
+                    this.showRetryDialog();
+                    return false;
+                }
+            }
         }
+    }
+
+    // إظهار حوار إعادة المحاولة
+    showRetryDialog() {
+        if (typeof createModal === 'function') {
+            const content = `
+                <div style="text-align: center; padding: 2rem;">
+                    <div style="font-size: 3rem; color: var(--warning-yellow); margin-bottom: 1rem;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3 style="margin-bottom: 1rem; color: var(--gray-900);">فشل تحميل البيانات</h3>
+                    <p style="color: var(--gray-600); margin-bottom: 2rem; line-height: 1.6;">
+                        لم نتمكن من تحميل البيانات من السحابة. يرجى التحقق من:
+                    </p>
+                    <ul style="text-align: right; color: var(--gray-600); margin-bottom: 2rem; line-height: 1.8;">
+                        <li>الاتصال بالإنترنت</li>
+                        <li>حالة خادم قاعدة البيانات</li>
+                        <li>صحة معرف المستخدم</li>
+                    </ul>
+                    <div style="display: grid; gap: 1rem;">
+                        <button class="btn btn-primary" onclick="retryDataDownload()">
+                            <i class="fas fa-sync-alt"></i>
+                            إعادة المحاولة
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeModal(this)">
+                            <i class="fas fa-times"></i>
+                            إغلاق
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            createModal('فشل تحميل البيانات', content);
+        } else {
+            console.log('⚠️ فشل تحميل البيانات - يرجى إعادة تحميل الصفحة');
+        }
+    }
+
+    // مزامنة تلقائية عند تحميل التطبيق
+    async autoSyncOnLoad() {
+        try {
+            console.log('🔄 بدء المزامنة التلقائية...');
+
+            // تأخير قصير للتأكد من تحميل التطبيق بالكامل
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // تحقق من وجود اتصال بالإنترنت
+            if (!navigator.onLine) {
+                console.log('❌ لا يوجد اتصال بالإنترنت - تم تخطي المزامنة التلقائية');
+                this.showOfflineMessage();
+                return;
+            }
+
+            // التحقق من وجود بيانات محلية
+            const hasLocalData = this.checkForLocalData();
+            console.log('📊 وجود بيانات محلية:', hasLocalData);
+
+            if (!hasLocalData) {
+                // إذا لم توجد بيانات محلية، قم بالتحميل من السحابة مع إعادة المحاولة
+                console.log('📥 لا توجد بيانات محلية - تحميل من السحابة...');
+                const success = await this.retryDownload();
+                if (success) {
+                    this.refreshUI();
+                    console.log('✅ تم تحميل البيانات من السحابة بنجاح');
+                }
+            } else {
+                // إذا وجدت بيانات محلية، قم بالمزامنة الكاملة
+                console.log('🔄 وجدت بيانات محلية - بدء المزامنة الكاملة...');
+                await this.syncAllSilent();
+            }
+
+        } catch (error) {
+            console.error('خطأ في المزامنة التلقائية:', error);
+            // في حالة الخطأ، حاول التحميل من السحابة على الأقل
+            try {
+                console.log('🔄 محاولة التحميل من السحابة كحل بديل...');
+                await this.retryDownload(2); // محاولتين فقط كحل بديل
+            } catch (fallbackError) {
+                console.error('خطأ في التحميل الاحتياطي:', fallbackError);
+                this.showRetryDialog();
+            }
+        }
+    }
+
+    // إظهار رسالة عدم الاتصال
+    showOfflineMessage() {
+        if (typeof showNotification === 'function') {
+            showNotification('لا يوجد اتصال', 'يرجى التحقق من الاتصال بالإنترنت للمزامنة', 'warning');
+        }
+    }
+
+    // فحص وجود بيانات محلية
+    checkForLocalData() {
+        try {
+            // تحقق من وجود dataManager وبياناته
+            if (!window.dataManager) {
+                console.log('❌ dataManager غير متوفر');
+                return false;
+            }
+
+            const casesCount = (window.dataManager.casesData || []).length;
+            const defendantsCount = (window.dataManager.defendantsData || []).length;
+            const lawyersCount = (window.dataManager.lawyersData || []).length;
+            const deductionsCount = (window.dataManager.deductionsData || []).length;
+
+            const totalData = casesCount + defendantsCount + lawyersCount + deductionsCount;
+
+            console.log('📊 إحصائيات البيانات المحلية:', {
+                cases: casesCount,
+                defendants: defendantsCount,
+                lawyers: lawyersCount,
+                deductions: deductionsCount,
+                total: totalData
+            });
+
+            return totalData > 0;
+        } catch (error) {
+            console.error('خطأ في فحص البيانات المحلية:', error);
+            return false;
+        }
+    }
+
+    // مزامنة صامتة (بدون واجهة المستخدم)
+    async syncAllSilent() {
+        if (this.isSyncing) return;
 
         this.isSyncing = true;
 
-        if (showNotifications && window.showNotification) {
-            window.showNotification('المزامنة', 'جاري مزامنة البيانات...', 'info');
-        }
-
         try {
-            // 1. رفع البيانات المحلية إلى السحابة
-            await this.uploadAllData();
+            console.log('🔄 جاري المزامنة الصامتة...');
 
-            // 2. تنزيل وتحديث البيانات من السحابة
+            // 1. رفع البيانات المحلية أولاً
+            await this.uploadCases();
+            await this.uploadDefendants();
+            await this.uploadLawyers();
+            await this.uploadDeductions();
+            await this.uploadSettings();
+
+            // 2. تحميل جميع البيانات من السحابة (واستبدال المحلية)
             await this.downloadAllData();
 
-            // 3. تحديث وقت آخر مزامنة
+            // 3. تحديث وقت المزامنة
             this.lastSyncTime = new Date().toISOString();
-            this.saveLastSyncTime();
+            localStorage.setItem('lastSyncTime', this.lastSyncTime);
 
-            if (showNotifications && window.showNotification) {
-                window.showNotification('نجحت المزامنة', 'تم مزامنة جميع البيانات بنجاح', 'success');
-            }
-
-            console.log('✅ اكتملت المزامنة الشاملة بنجاح');
-            
-            // تحديث واجهة المستخدم
+            // تحديث الواجهة
             this.refreshUI();
 
+            console.log('✅ اكتملت المزامنة التلقائية بنجاح');
+
         } catch (error) {
-            console.error('❌ خطأ في المزامنة الشاملة:', error);
-            
-            if (showNotifications && window.showNotification) {
-                window.showNotification('خطأ', 'فشلت المزامنة: ' + error.message, 'error');
-            }
-            
-            throw error;
+            console.error('خطأ في المزامنة الصامتة:', error);
         } finally {
             this.isSyncing = false;
         }
     }
 
-    /**
-     * رفع جميع البيانات المحلية إلى Supabase
-     */
-    async uploadAllData() {
-        const dataManager = window.dataManager;
-        if (!dataManager) {
-            throw new Error('DataManager غير متاح');
+    // ====== المزامنة الكاملة ======
+    async syncAll() {
+        if (this.isSyncing) {
+            showNotification('تنبيه', 'المزامنة قيد التشغيل بالفعل', 'warning');
+            return { success: false, message: 'جاري المزامنة' };
         }
 
-        console.log('📤 رفع البيانات المحلية...');
-
-        // رفع القضايا
-        await this.uploadCases(dataManager.casesData);
-
-        // رفع المدعى عليهم
-        await this.uploadDefendants(dataManager.defendantsData);
-
-        // رفع المحامين
-        await this.uploadLawyers(dataManager.lawyersData);
-
-        // رفع الاستقطاعات
-        await this.uploadDeductions(dataManager.deductionsData);
-
-        // رفع الإشعارات
-        await this.uploadNotifications(dataManager.notificationsData);
-
-        // رفع الإعدادات
-        await this.uploadSettings(dataManager.settingsData);
-
-        console.log('✅ تم رفع جميع البيانات');
-    }
-
-    /**
-     * رفع القضايا
-     */
-    async uploadCases(cases) {
-        if (!cases || cases.length === 0) return;
+        this.isSyncing = true;
+        const progressDiv = this.showSyncProgress();
 
         try {
-            for (const caseItem of cases) {
-                const caseData = {
-                    id: caseItem.id,
-                    case_number: caseItem.caseNumber,
-                    file_date: caseItem.fileDate,
-                    priority: caseItem.priority,
-                    status: caseItem.status,
-                    subject: caseItem.subject,
-                    amount: caseItem.amount,
-                    plaintiff_name: caseItem.plaintiffName,
-                    plaintiff_phone: caseItem.plaintiffPhone || '',
-                    plaintiff_address: caseItem.plaintiffAddress || '',
-                    defendant_name: caseItem.defendantName,
-                    defendant_address: caseItem.defendantAddress || '',
-                    lawyer_name: caseItem.lawyerName || '',
-                    court_name: caseItem.courtName,
-                    court_section: caseItem.courtSection || '',
-                    stage: caseItem.stage,
-                    next_hearing: caseItem.nextHearing || null,
-                    notes: caseItem.notes || '',
-                    documents: JSON.stringify(caseItem.documents || []),
-                    execution_options: JSON.stringify(caseItem.executionOptions || []),
-                    deductions: caseItem.deductions || 0,
-                    timeline: JSON.stringify(caseItem.timeline || []),
-                    created_at: caseItem.createdAt,
-                    last_update: caseItem.lastUpdate,
-                    updated_at: new Date().toISOString()
-                };
+            this.updateProgress(progressDiv, 'جاري الاتصال بالسحابة...', 10);
 
-                // استخدام upsert لإدراج أو تحديث
-                const { error } = await this.supabase
-                    .from(this.tables.cases)
-                    .upsert(caseData, { onConflict: 'id' });
-
-                if (error) {
-                    console.error(`خطأ في رفع القضية ${caseItem.caseNumber}:`, error);
-                }
+            if (!this.supabase) {
+                await this.loadSupabaseClient();
             }
 
-            console.log(`✅ تم رفع ${cases.length} قضية`);
+            // 1. رفع جميع البيانات المحلية
+            this.updateProgress(progressDiv, 'رفع القضايا...', 20);
+            await this.uploadCases();
+
+            this.updateProgress(progressDiv, 'رفع المدعى عليهم...', 35);
+            await this.uploadDefendants();
+
+            this.updateProgress(progressDiv, 'رفع المحامين...', 50);
+            await this.uploadLawyers();
+
+            this.updateProgress(progressDiv, 'رفع الاستقطاعات...', 65);
+            await this.uploadDeductions();
+
+            this.updateProgress(progressDiv, 'رفع الإعدادات...', 75);
+            await this.uploadSettings();
+
+            // 2. تحميل جميع البيانات من السحابة
+            this.updateProgress(progressDiv, 'تحميل البيانات من السحابة...', 80);
+            await this.downloadAllData();
+
+            // 3. تحديث وقت المزامنة
+            this.lastSyncTime = new Date().toISOString();
+            localStorage.setItem('lastSyncTime', this.lastSyncTime);
+
+            this.updateProgress(progressDiv, 'اكتملت المزامنة!', 100);
+
+            setTimeout(() => {
+                this.closeSyncProgress(progressDiv);
+                showNotification('نجحت المزامنة', 'تم مزامنة جميع البيانات بنجاح ✓', 'success');
+            }, 1000);
+
+            // تحديث الواجهة
+            this.refreshUI();
+
+            this.isSyncing = false;
+            return { success: true, message: 'تمت المزامنة بنجاح' };
+
         } catch (error) {
-            console.error('خطأ في رفع القضايا:', error);
-            throw error;
+            console.error('خطأ في المزامنة:', error);
+            this.closeSyncProgress(progressDiv);
+            showNotification('خطأ', 'فشلت المزامنة: ' + error.message, 'error');
+            this.isSyncing = false;
+            return { success: false, message: error.message };
         }
     }
 
-    /**
-     * رفع المدعى عليهم
-     */
-    async uploadDefendants(defendants) {
-        if (!defendants || defendants.length === 0) return;
+    // ====== رفع البيانات ======
+    async uploadCases() {
+        const cases = dataManager.casesData || [];
 
-        try {
-            for (const defendant of defendants) {
-                const defendantData = {
-                    id: defendant.id,
-                    name: defendant.name,
-                    phone: defendant.phone || '',
-                    email: defendant.email || '',
-                    workplace: defendant.workplace || '',
-                    address: defendant.address || '',
-                    cases_count: defendant.casesCount || 0,
-                    registration_date: defendant.registrationDate,
-                    created_at: defendant.createdAt,
-                    updated_at: new Date().toISOString()
-                };
-
-                const { error } = await this.supabase
-                    .from(this.tables.defendants)
-                    .upsert(defendantData, { onConflict: 'id' });
-
-                if (error) {
-                    console.error(`خطأ في رفع المدعى عليه ${defendant.name}:`, error);
-                }
+        for (const caseItem of cases) {
+            try {
+                await this.supabase
+                    .from('cases')
+                    .upsert({
+                        id: caseItem.id,
+                        user_id: this.userId,
+                        data: caseItem,
+                        updated_at: new Date().toISOString()
+                    });
+            } catch (error) {
+                console.error('خطأ في رفع القضية:', error);
             }
-
-            console.log(`✅ تم رفع ${defendants.length} مدعى عليه`);
-        } catch (error) {
-            console.error('خطأ في رفع المدعى عليهم:', error);
-            throw error;
         }
+
+        console.log(`✓ تم رفع ${cases.length} قضية`);
     }
 
-    /**
-     * رفع المحامين
-     */
-    async uploadLawyers(lawyers) {
-        if (!lawyers || lawyers.length === 0) return;
+    async uploadDefendants() {
+        const defendants = dataManager.defendantsData || [];
 
-        try {
-            for (const lawyer of lawyers) {
-                const lawyerData = {
-                    id: lawyer.id,
-                    name: lawyer.name,
-                    license: lawyer.license,
-                    phone: lawyer.phone || '',
-                    specialization: lawyer.specialization,
-                    email: lawyer.email || '',
-                    experience: lawyer.experience || 0,
-                    address: lawyer.address || '',
-                    notes: lawyer.notes || '',
-                    cases_count: lawyer.casesCount || 0,
-                    registration_date: lawyer.registrationDate,
-                    created_at: lawyer.createdAt,
-                    updated_at: new Date().toISOString()
-                };
-
-                const { error } = await this.supabase
-                    .from(this.tables.lawyers)
-                    .upsert(lawyerData, { onConflict: 'id' });
-
-                if (error) {
-                    console.error(`خطأ في رفع المحامي ${lawyer.name}:`, error);
-                }
+        for (const defendant of defendants) {
+            try {
+                await this.supabase
+                    .from('defendants')
+                    .upsert({
+                        id: defendant.id,
+                        user_id: this.userId,
+                        data: defendant,
+                        updated_at: new Date().toISOString()
+                    });
+            } catch (error) {
+                console.error('خطأ في رفع المدعى عليه:', error);
             }
-
-            console.log(`✅ تم رفع ${lawyers.length} محامي`);
-        } catch (error) {
-            console.error('خطأ في رفع المحامين:', error);
-            throw error;
         }
+
+        console.log(`✓ تم رفع ${defendants.length} مدعى عليه`);
     }
 
-    /**
-     * رفع الاستقطاعات
-     */
-    async uploadDeductions(deductions) {
-        if (!deductions || deductions.length === 0) return;
+    async uploadLawyers() {
+        const lawyers = dataManager.lawyersData || [];
 
-        try {
-            for (const deduction of deductions) {
-                const deductionData = {
-                    id: deduction.id,
-                    plaintiff_name: deduction.plaintiffName,
-                    case_number: deduction.caseNumber,
-                    amount: deduction.amount,
-                    date: deduction.date,
-                    source: deduction.source,
-                    notes: deduction.notes || '',
-                    status: deduction.status,
-                    created_at: deduction.createdAt,
-                    updated_at: new Date().toISOString()
-                };
-
-                const { error } = await this.supabase
-                    .from(this.tables.deductions)
-                    .upsert(deductionData, { onConflict: 'id' });
-
-                if (error) {
-                    console.error(`خطأ في رفع الاستقطاع ${deduction.id}:`, error);
-                }
+        for (const lawyer of lawyers) {
+            try {
+                await this.supabase
+                    .from('lawyers')
+                    .upsert({
+                        id: lawyer.id,
+                        user_id: this.userId,
+                        data: lawyer,
+                        updated_at: new Date().toISOString()
+                    });
+            } catch (error) {
+                console.error('خطأ في رفع المحامي:', error);
             }
-
-            console.log(`✅ تم رفع ${deductions.length} استقطاع`);
-        } catch (error) {
-            console.error('خطأ في رفع الاستقطاعات:', error);
-            throw error;
         }
+
+        console.log(`✓ تم رفع ${lawyers.length} محامي`);
     }
 
-    /**
-     * رفع الإشعارات
-     */
-    async uploadNotifications(notifications) {
-        if (!notifications || notifications.length === 0) return;
+    async uploadDeductions() {
+        const deductions = dataManager.deductionsData || [];
 
-        try {
-            // رفع آخر 50 إشعار فقط
-            const recentNotifications = notifications.slice(0, 50);
-
-            for (const notification of recentNotifications) {
-                const notificationData = {
-                    id: notification.id,
-                    title: notification.title,
-                    message: notification.message,
-                    type: notification.type,
-                    read: notification.read || false,
-                    created_at: notification.createdAt,
-                    updated_at: new Date().toISOString()
-                };
-
-                const { error } = await this.supabase
-                    .from(this.tables.notifications)
-                    .upsert(notificationData, { onConflict: 'id' });
-
-                if (error) {
-                    console.error(`خطأ في رفع الإشعار ${notification.id}:`, error);
-                }
+        for (const deduction of deductions) {
+            try {
+                await this.supabase
+                    .from('deductions')
+                    .upsert({
+                        id: deduction.id,
+                        user_id: this.userId,
+                        data: deduction,
+                        updated_at: new Date().toISOString()
+                    });
+            } catch (error) {
+                console.error('خطأ في رفع الاستقطاع:', error);
             }
-
-            console.log(`✅ تم رفع ${recentNotifications.length} إشعار`);
-        } catch (error) {
-            console.error('خطأ في رفع الإشعارات:', error);
-            throw error;
         }
+
+        console.log(`✓ تم رفع ${deductions.length} استقطاع`);
     }
 
-    /**
-     * رفع الإعدادات
-     */
-    async uploadSettings(settings) {
-        if (!settings) return;
-
-        try {
-            const settingsData = {
-                id: 1, // معرف ثابت للإعدادات
-                settings_json: JSON.stringify(settings),
+    async uploadSettings() {
+        await this.supabase
+            .from('settings')
+            .upsert({
+                user_id: this.userId,
+                data: dataManager.settingsData || {},
                 updated_at: new Date().toISOString()
-            };
+            }, {
+                onConflict: 'user_id'
+            });
 
-            const { error } = await this.supabase
-                .from(this.tables.settings)
-                .upsert(settingsData, { onConflict: 'id' });
-
-            if (error) {
-                console.error('خطأ في رفع الإعدادات:', error);
-            } else {
-                console.log('✅ تم رفع الإعدادات');
-            }
-        } catch (error) {
-            console.error('خطأ في رفع الإعدادات:', error);
-            throw error;
-        }
+        console.log('✓ تم رفع الإعدادات');
     }
 
-    /**
-     * تنزيل جميع البيانات من Supabase ودمجها مع البيانات المحلية
-     */
+    // ====== تحميل البيانات ======
     async downloadAllData() {
-        const dataManager = window.dataManager;
-        if (!dataManager) {
-            throw new Error('DataManager غير متاح');
-        }
-
-        console.log('📥 تنزيل البيانات من السحابة...');
+        console.log('🔄 جاري تحميل البيانات من السحابة...');
 
         try {
-            // تنزيل القضايا
-            const cases = await this.downloadCases();
-            dataManager.casesData = this.mergeData(dataManager.casesData, cases, 'id');
-            dataManager.filteredCases = [...dataManager.casesData];
-
-            // تنزيل المدعى عليهم
-            const defendants = await this.downloadDefendants();
-            dataManager.defendantsData = this.mergeData(dataManager.defendantsData, defendants, 'id');
-            dataManager.filteredDefendants = [...dataManager.defendantsData];
-
-            // تنزيل المحامين
-            const lawyers = await this.downloadLawyers();
-            dataManager.lawyersData = this.mergeData(dataManager.lawyersData, lawyers, 'id');
-            dataManager.filteredLawyers = [...dataManager.lawyersData];
-
-            // تنزيل الاستقطاعات
-            const deductions = await this.downloadDeductions();
-            dataManager.deductionsData = this.mergeData(dataManager.deductionsData, deductions, 'id');
-            dataManager.filteredDeductions = [...dataManager.deductionsData];
-
-            // تنزيل الإشعارات
-            const notifications = await this.downloadNotifications();
-            dataManager.notificationsData = this.mergeData(dataManager.notificationsData, notifications, 'id');
-
-            // تنزيل الإعدادات
-            const settings = await this.downloadSettings();
-            if (settings) {
-                dataManager.settingsData = { ...dataManager.settingsData, ...settings };
+            // التحقق من الاتصال بقاعدة البيانات
+            if (!this.supabase) {
+                console.log('🔄 إعادة تهيئة الاتصال بـ Supabase...');
+                await this.loadSupabaseClient();
             }
 
-            // حفظ البيانات المحدثة
-            dataManager.saveData();
+            let totalDownloaded = 0;
 
-            console.log('✅ تم تنزيل ودمج جميع البيانات');
-        } catch (error) {
-            console.error('خطأ في تنزيل البيانات:', error);
-            throw error;
-        }
-    }
+            // تحميل القضايا
+            console.log('📁 تحميل القضايا...');
+            const { data: cases, error: casesError } = await this.supabase
+                .from('cases')
+                .select('data')
+                .eq('user_id', this.userId);
 
-    /**
-     * تنزيل القضايا
-     */
-    async downloadCases() {
-        try {
-            const { data, error } = await this.supabase
-                .from(this.tables.cases)
-                .select('*')
-                .order('updated_at', { ascending: false });
+            if (casesError) {
+                console.error('خطأ في تحميل القضايا:', casesError);
+            } else {
+                window.dataManager.casesData = cases ? cases.map(c => c.data) : [];
+                window.dataManager.filteredCases = [...window.dataManager.casesData];
+                totalDownloaded += window.dataManager.casesData.length;
+                console.log(`✅ تم تحميل ${window.dataManager.casesData.length} قضية`);
+            }
 
-            if (error) throw error;
+            // تحميل المدعى عليهم
+            console.log('👥 تحميل المدعى عليهم...');
+            const { data: defendants, error: defendantsError } = await this.supabase
+                .from('defendants')
+                .select('data')
+                .eq('user_id', this.userId);
 
-            return (data || []).map(item => ({
-                id: item.id,
-                caseNumber: item.case_number,
-                fileDate: item.file_date,
-                priority: item.priority,
-                status: item.status,
-                subject: item.subject,
-                amount: item.amount,
-                plaintiffName: item.plaintiff_name,
-                plaintiffPhone: item.plaintiff_phone,
-                plaintiffAddress: item.plaintiff_address,
-                defendantName: item.defendant_name,
-                defendantAddress: item.defendant_address,
-                lawyerName: item.lawyer_name,
-                courtName: item.court_name,
-                courtSection: item.court_section,
-                stage: item.stage,
-                nextHearing: item.next_hearing,
-                notes: item.notes,
-                documents: JSON.parse(item.documents || '[]'),
-                executionOptions: JSON.parse(item.execution_options || '[]'),
-                deductions: item.deductions,
-                timeline: JSON.parse(item.timeline || '[]'),
-                createdAt: item.created_at,
-                lastUpdate: item.last_update
-            }));
-        } catch (error) {
-            console.error('خطأ في تنزيل القضايا:', error);
-            return [];
-        }
-    }
+            if (defendantsError) {
+                console.error('خطأ في تحميل المدعى عليهم:', defendantsError);
+            } else {
+                window.dataManager.defendantsData = defendants ? defendants.map(d => d.data) : [];
+                window.dataManager.filteredDefendants = [...window.dataManager.defendantsData];
+                totalDownloaded += window.dataManager.defendantsData.length;
+                console.log(`✅ تم تحميل ${window.dataManager.defendantsData.length} مدعى عليه`);
+            }
 
-    /**
-     * تنزيل المدعى عليهم
-     */
-    async downloadDefendants() {
-        try {
-            const { data, error } = await this.supabase
-                .from(this.tables.defendants)
-                .select('*')
-                .order('updated_at', { ascending: false });
+            // تحميل المحامين
+            console.log('⚖️ تحميل المحامين...');
+            const { data: lawyers, error: lawyersError } = await this.supabase
+                .from('lawyers')
+                .select('data')
+                .eq('user_id', this.userId);
 
-            if (error) throw error;
+            if (lawyersError) {
+                console.error('خطأ في تحميل المحامين:', lawyersError);
+            } else {
+                window.dataManager.lawyersData = lawyers ? lawyers.map(l => l.data) : [];
+                window.dataManager.filteredLawyers = [...window.dataManager.lawyersData];
+                totalDownloaded += window.dataManager.lawyersData.length;
+                console.log(`✅ تم تحميل ${window.dataManager.lawyersData.length} محامي`);
+            }
 
-            return (data || []).map(item => ({
-                id: item.id,
-                name: item.name,
-                phone: item.phone,
-                email: item.email,
-                workplace: item.workplace,
-                address: item.address,
-                casesCount: item.cases_count,
-                registrationDate: item.registration_date,
-                createdAt: item.created_at
-            }));
-        } catch (error) {
-            console.error('خطأ في تنزيل المدعى عليهم:', error);
-            return [];
-        }
-    }
+            // تحميل الاستقطاعات
+            console.log('💰 تحميل الاستقطاعات...');
+            const { data: deductions, error: deductionsError } = await this.supabase
+                .from('deductions')
+                .select('data')
+                .eq('user_id', this.userId);
 
-    /**
-     * تنزيل المحامين
-     */
-    async downloadLawyers() {
-        try {
-            const { data, error } = await this.supabase
-                .from(this.tables.lawyers)
-                .select('*')
-                .order('updated_at', { ascending: false });
+            if (deductionsError) {
+                console.error('خطأ في تحميل الاستقطاعات:', deductionsError);
+            } else {
+                window.dataManager.deductionsData = deductions ? deductions.map(d => d.data) : [];
+                window.dataManager.filteredDeductions = [...window.dataManager.deductionsData];
+                totalDownloaded += window.dataManager.deductionsData.length;
+                console.log(`✅ تم تحميل ${window.dataManager.deductionsData.length} استقطاع`);
+            }
 
-            if (error) throw error;
-
-            return (data || []).map(item => ({
-                id: item.id,
-                name: item.name,
-                license: item.license,
-                phone: item.phone,
-                specialization: item.specialization,
-                email: item.email,
-                experience: item.experience,
-                address: item.address,
-                notes: item.notes,
-                casesCount: item.cases_count,
-                registrationDate: item.registration_date,
-                createdAt: item.created_at
-            }));
-        } catch (error) {
-            console.error('خطأ في تنزيل المحامين:', error);
-            return [];
-        }
-    }
-
-    /**
-     * تنزيل الاستقطاعات
-     */
-    async downloadDeductions() {
-        try {
-            const { data, error } = await this.supabase
-                .from(this.tables.deductions)
-                .select('*')
-                .order('updated_at', { ascending: false });
-
-            if (error) throw error;
-
-            return (data || []).map(item => ({
-                id: item.id,
-                plaintiffName: item.plaintiff_name,
-                caseNumber: item.case_number,
-                amount: item.amount,
-                date: item.date,
-                source: item.source,
-                notes: item.notes,
-                status: item.status,
-                createdAt: item.created_at
-            }));
-        } catch (error) {
-            console.error('خطأ في تنزيل الاستقطاعات:', error);
-            return [];
-        }
-    }
-
-    /**
-     * تنزيل الإشعارات
-     */
-    async downloadNotifications() {
-        try {
-            const { data, error } = await this.supabase
-                .from(this.tables.notifications)
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            if (error) throw error;
-
-            return (data || []).map(item => ({
-                id: item.id,
-                title: item.title,
-                message: item.message,
-                type: item.type,
-                read: item.read,
-                createdAt: item.created_at
-            }));
-        } catch (error) {
-            console.error('خطأ في تنزيل الإشعارات:', error);
-            return [];
-        }
-    }
-
-    /**
-     * تنزيل الإعدادات
-     */
-    async downloadSettings() {
-        try {
-            const { data, error } = await this.supabase
-                .from(this.tables.settings)
-                .select('settings_json')
-                .eq('id', 1)
+            // تحميل الإعدادات
+            console.log('⚙️ تحميل الإعدادات...');
+            const { data: settings, error: settingsError } = await this.supabase
+                .from('settings')
+                .select('data')
+                .eq('user_id', this.userId)
                 .single();
 
-            if (error) throw error;
-
-            return data ? JSON.parse(data.settings_json) : null;
-        } catch (error) {
-            console.error('خطأ في تنزيل الإعدادات:', error);
-            return null;
-        }
-    }
-
-    /**
-     * دمج البيانات المحلية مع البيانات السحابية
-     */
-    mergeData(localData, cloudData, idField = 'id') {
-        // إنشاء خريطة للبيانات المحلية
-        const localMap = new Map(localData.map(item => [item[idField], item]));
-
-        // إضافة أو تحديث البيانات من السحابة
-        cloudData.forEach(cloudItem => {
-            const id = cloudItem[idField];
-            const localItem = localMap.get(id);
-
-            if (!localItem) {
-                // عنصر جديد من السحابة
-                localMap.set(id, cloudItem);
+            if (settingsError && settingsError.code !== 'PGRST116') {
+                console.error('خطأ في تحميل الإعدادات:', settingsError);
+            } else if (settings) {
+                window.dataManager.settingsData = settings.data || {};
+                console.log('✅ تم تحميل الإعدادات');
             } else {
-                // مقارنة التواريخ واختيار الأحدث
-                const cloudDate = new Date(cloudItem.lastUpdate || cloudItem.createdAt || 0);
-                const localDate = new Date(localItem.lastUpdate || localItem.createdAt || 0);
-
-                if (cloudDate > localDate) {
-                    localMap.set(id, cloudItem);
-                }
+                console.log('ℹ️ لم يتم العثور على إعدادات مخزنة');
+                window.dataManager.settingsData = {};
             }
-        });
 
-        return Array.from(localMap.values());
-    }
+            // حفظ البيانات محلياً
+            console.log('💾 حفظ البيانات محلياً...');
+            await window.dataManager.saveData();
 
-    /**
-     * تفعيل المزامنة التلقائية
-     */
-    enableAutoSync(intervalMinutes = 5) {
-        if (this.syncInterval) {
-            clearInterval(this.syncInterval);
-        }
+            console.log(`✅ اكتمل التحميل - إجمالي العناصر المحملة: ${totalDownloaded}`);
 
-        this.syncInterval = setInterval(() => {
-            console.log('🔄 مزامنة تلقائية...');
-            this.fullSync(false).catch(error => {
-                console.error('خطأ في المزامنة التلقائية:', error);
-            });
-        }, intervalMinutes * 60 * 1000);
+            // إظهار إشعار للمستخدم إذا تم تحميل بيانات
+            if (totalDownloaded > 0) {
+                this.showSuccessMessage(`تم تحميل ${totalDownloaded} عنصر من السحابة`);
+            } else {
+                console.log('ℹ️ لا توجد بيانات مخزنة في السحابة لهذا المستخدم');
+            }
 
-        console.log(`✅ تم تفعيل المزامنة التلقائية كل ${intervalMinutes} دقائق`);
-    }
-
-    /**
-     * إيقاف المزامنة التلقائية
-     */
-    disableAutoSync() {
-        if (this.syncInterval) {
-            clearInterval(this.syncInterval);
-            this.syncInterval = null;
-            console.log('⏸️ تم إيقاف المزامنة التلقائية');
+        } catch (error) {
+            console.error('❌ خطأ عام في تحميل البيانات:', error);
+            throw error;
         }
     }
 
-    /**
-     * تفعيل المزامنة في الوقت الحقيقي
-     */
-    enableRealtimeSync() {
-        if (!this.isInitialized) {
-            console.error('يجب تهيئة Supabase أولاً');
-            return;
-        }
-
-        // الاشتراك في تغييرات القضايا
-        const casesSubscription = this.supabase
-            .channel('cases_changes')
-            .on('postgres_changes', 
-                { event: '*', schema: 'public', table: this.tables.cases },
-                (payload) => this.handleRealtimeChange('cases', payload)
-            )
-            .subscribe();
-
-        // الاشتراك في تغييرات المدعى عليهم
-        const defendantsSubscription = this.supabase
-            .channel('defendants_changes')
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: this.tables.defendants },
-                (payload) => this.handleRealtimeChange('defendants', payload)
-            )
-            .subscribe();
-
-        // الاشتراك في تغييرات المحامين
-        const lawyersSubscription = this.supabase
-            .channel('lawyers_changes')
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: this.tables.lawyers },
-                (payload) => this.handleRealtimeChange('lawyers', payload)
-            )
-            .subscribe();
-
-        // الاشتراك في تغييرات الاستقطاعات
-        const deductionsSubscription = this.supabase
-            .channel('deductions_changes')
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: this.tables.deductions },
-                (payload) => this.handleRealtimeChange('deductions', payload)
-            )
-            .subscribe();
-
-        this.realtimeSubscriptions = [
-            casesSubscription,
-            defendantsSubscription,
-            lawyersSubscription,
-            deductionsSubscription
-        ];
-
-        console.log('✅ تم تفعيل المزامنة في الوقت الحقيقي');
-    }
-
-    /**
-     * معالجة التغييرات في الوقت الحقيقي
-     */
-    handleRealtimeChange(dataType, payload) {
-        console.log(`🔄 تغيير في الوقت الحقيقي: ${dataType}`, payload);
-
-        const dataManager = window.dataManager;
-        if (!dataManager) return;
-
-        // تحديث البيانات حسب النوع
-        switch (payload.eventType) {
-            case 'INSERT':
-            case 'UPDATE':
-                this.downloadAllData().then(() => this.refreshUI());
-                break;
-            case 'DELETE':
-                this.downloadAllData().then(() => this.refreshUI());
-                break;
+    // عرض رسالة نجاح للمستخدم
+    showSuccessMessage(message) {
+        if (typeof showNotification === 'function') {
+            showNotification('تم التحميل', message, 'success');
+        } else {
+            console.log('✅ ' + message);
         }
     }
 
-    /**
-     * إيقاف المزامنة في الوقت الحقيقي
-     */
-    disableRealtimeSync() {
-        this.realtimeSubscriptions.forEach(subscription => {
-            subscription.unsubscribe();
-        });
-        this.realtimeSubscriptions = [];
-        console.log('⏸️ تم إيقاف المزامنة في الوقت الحقيقي');
+    // ====== تحميل فقط (للجهاز الجديد) ======
+    async downloadOnly() {
+        if (this.isSyncing) {
+            showNotification('تنبيه', 'المزامنة قيد التشغيل بالفعل', 'warning');
+            return { success: false };
+        }
+
+        this.isSyncing = true;
+        const progressDiv = this.showSyncProgress();
+
+        try {
+            this.updateProgress(progressDiv, 'جاري الاتصال بالسحابة...', 10);
+
+            if (!this.supabase) {
+                await this.loadSupabaseClient();
+            }
+
+            this.updateProgress(progressDiv, 'تحميل جميع البيانات...', 50);
+
+            // إعادة تعيين البيانات المحلية قبل التحميل
+            dataManager.casesData = [];
+            dataManager.defendantsData = [];
+            dataManager.lawyersData = [];
+            dataManager.deductionsData = [];
+            dataManager.settingsData = {};
+
+            await this.downloadAllData();
+
+            this.updateProgress(progressDiv, 'اكتمل التحميل!', 100);
+
+            setTimeout(() => {
+                this.closeSyncProgress(progressDiv);
+                showNotification('نجح التحميل', 'تم تحميل جميع البيانات من السحابة ✓', 'success');
+            }, 1000);
+
+            this.refreshUI();
+
+            this.isSyncing = false;
+            return { success: true };
+
+        } catch (error) {
+            console.error('خطأ في التحميل:', error);
+            this.closeSyncProgress(progressDiv);
+            showNotification('خطأ', 'فشل التحميل: ' + error.message, 'error');
+            this.isSyncing = false;
+            return { success: false };
+        }
     }
 
-    /**
-     * تحديث واجهة المستخدم بعد المزامنة
-     */
+    // ====== رفع فقط (نسخ احتياطي) ======
+    async uploadOnly() {
+        if (this.isSyncing) {
+            showNotification('تنبيه', 'المزامنة قيد التشغيل بالفعل', 'warning');
+            return { success: false };
+        }
+
+        this.isSyncing = true;
+        const progressDiv = this.showSyncProgress();
+
+        try {
+            this.updateProgress(progressDiv, 'جاري الاتصال بالسحابة...', 10);
+
+            if (!this.supabase) {
+                await this.loadSupabaseClient();
+            }
+
+            this.updateProgress(progressDiv, 'رفع القضايا...', 20);
+            await this.uploadCases();
+
+            this.updateProgress(progressDiv, 'رفع المدعى عليهم...', 40);
+            await this.uploadDefendants();
+
+            this.updateProgress(progressDiv, 'رفع المحامين...', 60);
+            await this.uploadLawyers();
+
+            this.updateProgress(progressDiv, 'رفع الاستقطاعات...', 80);
+            await this.uploadDeductions();
+
+            this.updateProgress(progressDiv, 'رفع الإعدادات...', 90);
+            await this.uploadSettings();
+
+            this.updateProgress(progressDiv, 'اكتمل الرفع!', 100);
+
+            setTimeout(() => {
+                this.closeSyncProgress(progressDiv);
+                showNotification('نجح الرفع', 'تم رفع جميع البيانات إلى السحابة ✓', 'success');
+            }, 1000);
+
+            this.isSyncing = false;
+            return { success: true };
+
+        } catch (error) {
+            console.error('خطأ في الرفع:', error);
+            this.closeSyncProgress(progressDiv);
+            showNotification('خطأ', 'فشل الرفع: ' + error.message, 'error');
+            this.isSyncing = false;
+            return { success: false };
+        }
+    }
+
+    // ====== إجبار التحميل من السحابة (استبدال كامل) ======
+    async forceDownloadFromCloud() {
+        if (this.isSyncing) {
+            showNotification('تنبيه', 'المزامنة قيد التشغيل بالفعل', 'warning');
+            return { success: false };
+        }
+
+        this.isSyncing = true;
+        const progressDiv = this.showSyncProgress();
+
+        try {
+            this.updateProgress(progressDiv, 'جاري الاتصال بالسحابة...', 10);
+
+            if (!this.supabase) {
+                await this.loadSupabaseClient();
+            }
+
+            this.updateProgress(progressDiv, 'حذف البيانات المحلية...', 30);
+
+            // حذف جميع البيانات المحلية
+            dataManager.casesData = [];
+            dataManager.defendantsData = [];
+            dataManager.lawyersData = [];
+            dataManager.deductionsData = [];
+            dataManager.settingsData = {};
+            dataManager.filteredCases = [];
+            dataManager.filteredDefendants = [];
+            dataManager.filteredLawyers = [];
+            dataManager.filteredDeductions = [];
+
+            this.updateProgress(progressDiv, 'تحميل البيانات من السحابة...', 70);
+
+            // تحميل البيانات من السحابة
+            await this.downloadAllData();
+
+            this.updateProgress(progressDiv, 'اكتمل الاستبدال!', 100);
+
+            setTimeout(() => {
+                this.closeSyncProgress(progressDiv);
+                showNotification('تم الاستبدال', 'تم استبدال جميع البيانات المحلية بالبيانات السحابية ✓', 'success');
+            }, 1000);
+
+            this.refreshUI();
+
+            this.isSyncing = false;
+            return { success: true };
+
+        } catch (error) {
+            console.error('خطأ في الاستبدال:', error);
+            this.closeSyncProgress(progressDiv);
+            showNotification('خطأ', 'فشل الاستبدال: ' + error.message, 'error');
+            this.isSyncing = false;
+            return { success: false };
+        }
+    }
+
+    // ====== واجهة المستخدم ======
+    showSyncProgress() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML = `
+            <div class="modal" style="max-width: 500px;">
+                <div style="text-align: center; padding: 2rem;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">
+                        <i class="fas fa-cloud-upload-alt" style="color: var(--primary-blue);"></i>
+                    </div>
+                    <h3 style="margin-bottom: 1rem;">جاري المزامنة</h3>
+                    <div id="sync-status" style="color: var(--gray-600); margin-bottom: 1.5rem;">
+                        جاري التحضير...
+                    </div>
+                    <div style="background: var(--gray-200); height: 8px; border-radius: 4px; overflow: hidden;">
+                        <div id="sync-progress" style="background: var(--gradient-primary); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div id="sync-percent" style="margin-top: 0.5rem; font-weight: 700; color: var(--primary-blue);">0%</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    updateProgress(overlay, message, percent) {
+        const statusEl = overlay.querySelector('#sync-status');
+        const progressEl = overlay.querySelector('#sync-progress');
+        const percentEl = overlay.querySelector('#sync-percent');
+
+        if (statusEl) statusEl.textContent = message;
+        if (progressEl) progressEl.style.width = percent + '%';
+        if (percentEl) percentEl.textContent = percent + '%';
+    }
+
+    closeSyncProgress(overlay) {
+        setTimeout(() => {
+            if (document.body.contains(overlay)) {
+                document.body.removeChild(overlay);
+            }
+        }, 500);
+    }
+
     refreshUI() {
+        if (typeof updateDashboardStats === 'function') updateDashboardStats();
         if (typeof renderCasesTable === 'function') renderCasesTable();
         if (typeof renderDefendantsTable === 'function') renderDefendantsTable();
         if (typeof renderLawyersTable === 'function') renderLawyersTable();
         if (typeof renderDeductionsTable === 'function') renderDeductionsTable();
-        if (typeof updateDashboardStats === 'function') updateDashboardStats();
-        if (typeof renderUpcomingHearings === 'function') renderUpcomingHearings();
-        if (typeof renderAlerts === 'function') renderAlerts();
+        if (typeof updateLawyerSelector === 'function') updateLawyerSelector();
     }
 
-    /**
-     * حفظ وقت آخر مزامنة
-     */
-    saveLastSyncTime() {
-        if (this.lastSyncTime) {
-            localStorage.setItem('lastSyncTime', this.lastSyncTime);
+    // ====== حذف البيانات السحابية ======
+    async deleteAllCloudData() {
+        if (!confirm('⚠️ تحذير!\n\nسيتم حذف جميع بياناتك من السحابة نهائياً.\nهذا الإجراء لا يمكن التراجع عنه!\n\nهل أنت متأكد من المتابعة؟')) {
+            return { success: false };
+        }
+
+        try {
+            showNotification('الحذف', 'جاري حذف البيانات...', 'info');
+
+            await this.supabase.from('cases').delete().eq('user_id', this.userId);
+            await this.supabase.from('defendants').delete().eq('user_id', this.userId);
+            await this.supabase.from('lawyers').delete().eq('user_id', this.userId);
+            await this.supabase.from('deductions').delete().eq('user_id', this.userId);
+            await this.supabase.from('settings').delete().eq('user_id', this.userId);
+
+            showNotification('تم الحذف', 'تم حذف جميع البيانات من السحابة', 'success');
+            return { success: true };
+
+        } catch (error) {
+            console.error('خطأ في الحذف:', error);
+            showNotification('خطأ', 'فشل الحذف: ' + error.message, 'error');
+            return { success: false };
         }
     }
 
-    /**
-     * تحميل وقت آخر مزامنة
-     */
-    loadLastSyncTime() {
-        const savedTime = localStorage.getItem('lastSyncTime');
-        if (savedTime) {
-            this.lastSyncTime = savedTime;
-        }
-    }
-
-    /**
-     * الحصول على معلومات حالة المزامنة
-     */
     getSyncStatus() {
         return {
-            isInitialized: this.isInitialized,
-            isSyncing: this.isSyncing,
+            userId: this.userId,
             lastSyncTime: this.lastSyncTime,
-            autoSyncEnabled: this.syncInterval !== null,
-            realtimeSyncEnabled: this.realtimeSubscriptions.length > 0
+            isSyncing: this.isSyncing
         };
     }
 }
 
-// إنشاء نسخة عامة من مدير المزامنة
-window.supabaseSyncManager = new SupabaseSyncManager();
+// إنشاء نسخة عامة
+window.supabaseSync = new SupabaseSyncComplete();
 
-// تهيئة تلقائية عند تحميل الصفحة
-document.addEventListener('DOMContentLoaded', async () => {
+// دالة عامة لإعادة تحميل البيانات
+async function retryDataDownload() {
+    if (window.supabaseSync) {
+        const success = await window.supabaseSync.retryDownload();
+        if (success && typeof closeModal === 'function') {
+            closeModal(document.querySelector('.modal-overlay .btn-secondary'));
+        }
+    }
+}
+
+// دالة لفحص حالة البيانات وإظهار معلومات مفيدة
+function checkDataStatus() {
+    if (!window.supabaseSync) {
+        console.log('❌ نظام المزامنة غير متوفر');
+        return;
+    }
+
+    const status = window.supabaseSync.getSyncStatus();
+    const hasLocalData = window.supabaseSync.checkForLocalData();
+
+    console.log('📊 حالة البيانات:', {
+        userId: status.userId,
+        lastSyncTime: status.lastSyncTime,
+        isSyncing: status.isSyncing,
+        hasLocalData: hasLocalData,
+        isOnline: navigator.onLine
+    });
+
+    if (typeof showNotification === 'function') {
+        const message = `
+المستخدم: ${status.userId}
+البيانات المحلية: ${hasLocalData ? 'موجودة' : 'غير موجودة'}
+الاتصال: ${navigator.onLine ? 'متصل' : 'غير متصل'}
+آخر مزامنة: ${status.lastSyncTime ? new Date(status.lastSyncTime).toLocaleString('ar-SA') : 'لم تتم'}
+        `;
+
+        showNotification('حالة البيانات', message, 'info');
+    }
+}
+
+// دالة طوارئ لإعادة تعيين البيانات المحلية وتحميلها من السحابة
+async function emergencyDataReset() {
+    if (!confirm('⚠️ تحذير!\n\nسيتم حذف جميع البيانات المحلية وإعادة تحميلها من السحابة.\n\nهل أنت متأكد؟')) {
+        return;
+    }
+
     try {
-        await window.supabaseSyncManager.initialize();
-        console.log('✅ مدير المزامنة Supabase جاهز');
-        
-        // إضافة زر المزامنة إلى الواجهة
-        addSyncButton();
+        console.log('🔄 بدء إعادة تعيين البيانات...');
+
+        // حذف البيانات المحلية
+        if (window.dataManager) {
+            window.dataManager.casesData = [];
+            window.dataManager.defendantsData = [];
+            window.dataManager.lawyersData = [];
+            window.dataManager.deductionsData = [];
+            window.dataManager.settingsData = {};
+            window.dataManager.filteredCases = [];
+            window.dataManager.filteredDefendants = [];
+            window.dataManager.filteredLawyers = [];
+            window.dataManager.filteredDeductions = [];
+            await window.dataManager.saveData();
+        }
+
+        // إعادة تحميل البيانات من السحابة
+        if (window.supabaseSync) {
+            const success = await window.supabaseSync.retryDownload();
+            if (success) {
+                console.log('✅ تم إعادة تعيين البيانات بنجاح');
+                if (typeof showNotification === 'function') {
+                    showNotification('تم بنجاح', 'تم إعادة تعيين البيانات وتحميلها من السحابة', 'success');
+                }
+            }
+        }
+
     } catch (error) {
-        console.error('خطأ في تهيئة مدير المزامنة:', error);
+        console.error('❌ خطأ في إعادة تعيين البيانات:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('خطأ', 'فشل في إعادة تعيين البيانات: ' + error.message, 'error');
+        }
+    }
+}
+
+// ====== واجهة المستخدم ======
+function showSyncPanel() {
+    const status = window.supabaseSync.getSyncStatus();
+
+    const content = `
+        <div style="min-width: 550px;">
+            <div style="background: linear-gradient(135deg, var(--primary-blue-light), var(--indigo-light)); padding: 2rem; border-radius: 1rem; margin-bottom: 2rem; text-align: center;">
+                <div style="font-size: 3.5rem; margin-bottom: 1rem;">
+                    <i class="fas fa-cloud" style="color: var(--primary-blue);"></i>
+                </div>
+                <h2 style="margin-bottom: 0.5rem; color: var(--gray-900);">المزامنة السحابية</h2>
+                <p style="color: var(--gray-600); font-size: 0.875rem;">مزامنة بياناتك عبر جميع الأجهزة</p>
+            </div>
+
+            <div style="background: var(--gray-50); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 2rem;">
+                <div style="display: grid; gap: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: white; border-radius: 0.5rem;">
+                        <span style="color: var(--gray-600);">معرف المستخدم:</span>
+                        <code style="background: var(--gray-100); padding: 0.25rem 0.75rem; border-radius: 0.25rem; font-size: 0.75rem;">${status.userId}</code>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: white; border-radius: 0.5rem;">
+                        <span style="color: var(--gray-600);">آخر مزامنة:</span>
+                        <strong style="color: var(--gray-900);">${status.lastSyncTime ? new Date(status.lastSyncTime).toLocaleString('ar-EG') : 'لم تتم بعد'}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: white; border-radius: 0.5rem;">
+                        <span style="color: var(--gray-600);">البيانات المحلية:</span>
+                        <div style="text-align: left;">
+                            <div style="font-size: 0.75rem; color: var(--gray-600);">
+                                ${dataManager.casesData.length} قضية | 
+                                ${dataManager.defendantsData.length} مدعى عليه | 
+                                ${dataManager.lawyersData.length} محامي | 
+                                ${dataManager.deductionsData.length} استقطاع
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; gap: 1rem; margin-bottom: 2rem;">
+                <button class="btn btn-primary" onclick="handleSync('full')" style="font-size: 1rem; padding: 1rem;">
+                    <i class="fas fa-sync-alt"></i>
+                    <span style="font-weight: 700;">مزامنة كاملة (رفع + تحميل)</span>
+                </button>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <button class="btn btn-success" onclick="handleSync('upload')">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        رفع البيانات
+                    </button>
+                    
+                    <button class="btn btn-secondary" onclick="handleSync('download')">
+                        <i class="fas fa-cloud-download-alt"></i>
+                        تحميل البيانات
+                    </button>
+                </div>
+
+                <button class="btn btn-info" onclick="handleSync('force-download')" style="background: var(--orange); border-color: var(--orange);">
+                    <i class="fas fa-download"></i>
+                    استبدال البيانات المحلية بالسحابية
+                </button>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <button class="btn" onclick="checkDataStatus()" style="background: var(--indigo); border-color: var(--indigo); color: white;">
+                        <i class="fas fa-info-circle"></i>
+                        فحص حالة البيانات
+                    </button>
+                    
+                    <button class="btn" onclick="emergencyDataReset()" style="background: var(--purple); border-color: var(--purple); color: white;">
+                        <i class="fas fa-first-aid"></i>
+                        إعادة تعيين طوارئ
+                    </button>
+                </div>
+
+                <button class="btn btn-danger" onclick="handleSync('delete')">
+                    <i class="fas fa-trash-alt"></i>
+                    حذف البيانات السحابية
+                </button>
+            </div>
+
+            <div style="background: var(--indigo-light); padding: 1.25rem; border-radius: 0.75rem; border-right: 4px solid var(--indigo);">
+                <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                    <i class="fas fa-info-circle" style="color: var(--indigo); font-size: 1.25rem;"></i>
+                    <div style="flex: 1;">
+                        <strong style="display: block; margin-bottom: 0.5rem; color: var(--gray-900);">كيف تعمل المزامنة؟</strong>
+                        <ul style="margin: 0; padding-right: 1.25rem; line-height: 1.8; font-size: 0.875rem; color: var(--gray-700);">
+                            <li><strong>المزامنة الكاملة:</strong> ترفع بياناتك المحلية ثم تحملها من السحابة (مزامنة ثنائية)</li>
+                            <li><strong>الرفع:</strong> نسخ البيانات من جهازك إلى السحابة فقط</li>
+                            <li><strong>التحميل:</strong> نسخ البيانات من السحابة إلى جهازك فقط</li>
+                            <li><strong>الاستبدال:</strong> حذف البيانات المحلية واستبدالها بالبيانات السحابية (مفيد للأجهزة الجديدة)</li>
+                            <li><strong>فحص الحالة:</strong> عرض تفاصيل حالة البيانات والاتصال</li>
+                            <li><strong>إعادة التعيين:</strong> حل طوارئ لحذف البيانات المحلية وإعادة التحميل</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    createModal('إدارة المزامنة السحابية', content);
+}
+
+async function handleSync(action) {
+    let result;
+
+    switch (action) {
+        case 'full':
+            result = await window.supabaseSync.syncAll();
+            break;
+        case 'upload':
+            result = await window.supabaseSync.uploadOnly();
+            break;
+        case 'download':
+            result = await window.supabaseSync.downloadOnly();
+            break;
+        case 'force-download':
+            // تأكيد من المستخدم قبل الاستبدال
+            if (confirm('⚠️ تحذير!\n\nسيتم حذف جميع البيانات المحلية واستبدالها بالبيانات الموجودة في السحابة.\n\nهل أنت متأكد من المتابعة؟')) {
+                result = await window.supabaseSync.forceDownloadFromCloud();
+            }
+            break;
+        case 'retry':
+            result = await window.supabaseSync.retryDownload();
+            break;
+        case 'delete':
+            result = await window.supabaseSync.deleteAllCloudData();
+            break;
+    }
+
+    if (result && result.success) {
+        closeModal(event.target);
+    }
+}
+
+// إضافة الأزرار إلى الواجهة
+document.addEventListener('DOMContentLoaded', function () {
+    // زر في الإعدادات
+    setTimeout(() => {
+        const settingsGrid = document.querySelector('#settings-content .grid-2');
+        if (settingsGrid) {
+            const syncCard = document.createElement('div');
+            syncCard.className = 'card';
+            syncCard.style.gridColumn = '1 / -1';
+            syncCard.innerHTML = `
+                <h3 style="display: flex; align-items: center; gap: 0.75rem;">
+                    <i class="fas fa-cloud" style="color: var(--primary-blue);"></i>
+                    المزامنة السحابية
+                </h3>
+                <p style="color: var(--gray-600); margin: 1rem 0 1.5rem; line-height: 1.6;">
+                    قم بمزامنة جميع بياناتك (القضايا، المدعى عليهم، المحامين، الاستقطاعات، الإعدادات) 
+                    عبر الأجهزة المختلفة باستخدام التخزين السحابي الآمن.
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <button class="btn btn-primary" onclick="showSyncPanel()">
+                        <i class="fas fa-cog"></i>
+                        فتح لوحة المزامنة
+                    </button>
+                    <button class="btn btn-success" onclick="window.supabaseSync.syncAll()">
+                        <i class="fas fa-sync"></i>
+                        مزامنة سريعة
+                    </button>
+                </div>
+            `;
+            settingsGrid.appendChild(syncCard);
+        }
+    }, 500);
+
+    // زر في الهيدر
+    const headerRight = document.querySelector('.header-right');
+    if (headerRight) {
+        const syncBtn = document.createElement('button');
+        syncBtn.className = 'btn btn-primary';
+        syncBtn.style.cssText = 'padding: 0.75rem 1.25rem; display: flex; align-items: center; gap: 0.5rem;';
+        syncBtn.innerHTML = '<i class="fas fa-cloud"></i><span>مزامنة</span>';
+        syncBtn.onclick = () => window.supabaseSync.syncAll();
+        headerRight.insertBefore(syncBtn, headerRight.firstChild);
     }
 });
 
-/**
- * إضافة زر المزامنة إلى واجهة المستخدم
- */
-function addSyncButton() {
-    const headerRight = document.querySelector('.header-right');
-    if (!headerRight) return;
-
-    const syncButton = document.createElement('button');
-    syncButton.className = 'btn btn-success';
-    syncButton.innerHTML = '<i class="fas fa-sync-alt"></i> مزامنة';
-    syncButton.style.marginLeft = '1rem';
-    syncButton.onclick = async () => {
-        syncButton.disabled = true;
-        syncButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري المزامنة...';
-        
-        try {
-            await window.supabaseSyncManager.fullSync();
-        } catch (error) {
-            console.error('خطأ في المزامنة:', error);
-        } finally {
-            syncButton.disabled = false;
-            syncButton.innerHTML = '<i class="fas fa-sync-alt"></i> مزامنة';
-        }
-    };
-
-    headerRight.insertBefore(syncButton, headerRight.firstChild);
-}
-
-console.log('📦 تم تحميل نظام المزامنة Supabase');
+console.log('✓ تم تحميل نظام المزامنة السحابية الكاملة');

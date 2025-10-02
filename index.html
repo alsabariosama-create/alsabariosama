@@ -5455,15 +5455,25 @@
     const deductionsCount = dataManager.deductionsData.length;
     showNotification('فحص البيانات', `عدد الاستقطاعات المحفوظة: ${deductionsCount}`, 'info');
 }
+
+
+
+
         
     </script>
 
     <script src="app-complete.js"></script>
+  <script src="notifications-system.js"></script>
+  <!-- بعد سطور Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+<!-- أضف هذا السطر الجديد -->
+<script src="deductions-sync-manager.js"></script>
+
+<!-- باقي السكريبتات -->
 <script src="firebase-integration-v4.js"></script>
-<!-- في نهاية ملف index.html قبل </body> -->
-<script src="notifications-system.js"></script>
-<script src="firebase-sync-manager.js"></script>
- 
+
  
     
 </body>

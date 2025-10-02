@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>تطبيق المحامي - إدارة القضايا</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* صفحة تسجيل الدخول */
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-box {
+            background: white;
+            border-radius: 20px;
+            padding: 40px 30px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .login-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .login-icon i {
+            font-size: 36px;
+            color: white;
+        }
+
+        .login-header h1 {
+            font-size: 24px;
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+
+        .login-header p {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #374151;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 15px 45px 15px 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            direction: ltr;
+            text-align: right;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* الصفحة الرئيسية */
+        .app-container {
+            display: none;
+            min-height: 100vh;
+            background: #f3f4f6;
+        }
+
+        .app-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .lawyer-info h2 {
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .lawyer-info p {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 40px 12px 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .search-box i {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+        }
+
+        /* الإحصائيات */
+        .stats-container {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        .stat-card i {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card.total i { color: #3b82f6; }
+        .stat-card.active i { color: #10b981; }
+        .stat-card.pending i { color: #f59e0b; }
+        .stat-card.closed i { color: #6b7280; }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        /* قائمة القضايا */
+        .cases-container {
+            padding: 0 20px 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .case-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .case-card:active {
+            transform: scale(0.98);
+        }
+
+        .case-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .case-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 5px;
+        }
+
+        .case-number {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .case-status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-closed {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .case-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .detail-item {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .detail-item i {
+            margin-left: 5px;
+            color: #9ca3af;
+        }
+
+        .case-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .btn-update {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .btn-deduction {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        /* صفحة تفاصيل القضية */
+        .case-detail-page {
+            display: none;
+            background: #f3f4f6;
+            min-height: 100vh;
+        }
+
+        .detail-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+
+        .detail-content {
+            padding: 20px;
+        }
+
+        .info-section {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+
+        .info-section h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .info-value {
+            color: #1f2937;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        /* النماذج */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            width: 100%;
+            max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #6b7280;
+            cursor: pointer;
+        }
+
+        .modal-form .form-group {
+            margin-bottom: 20px;
+        }
+
+        .modal-form select,
+        .modal-form textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .modal-form textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-save {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-cancel {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        /* الإشعارات */
+        .notification {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: none;
+            align-items: center;
+            gap: 12px;
+            z-index: 2000;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .notification.success {
+            border-right: 4px solid #10b981;
+        }
+
+        .notification.error {
+            border-right: 4px solid #ef4444;
+        }
+
+        .notification i {
+            font-size: 24px;
+        }
+
+        .notification.success i {
+            color: #10b981;
+        }
+
+        .notification.error i {
+            color: #ef4444;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 3px;
+        }
+
+        .notification-message {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+
+        .empty-state i {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Spinner -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        <i class="fas fa-check-circle"></i>
+        <div class="notification-content">
+            <div class="notification-title" id="notificationTitle"></div>
+            <div class="notification-message" id="notificationMessage"></div>
+        </div>
+    </div>
+
+    <!-- صفحة تسجيل الدخول -->
+    <div class="login-container" id="loginPage">
+        <div class="login-box">
+            <div class="login-header">
+                <div class="login-icon">
+                    <i class="fas fa-gavel"></i>
+                </div>
+                <h1>تطبيق المحامي</h1>
+                <p>إدارة القضايا والمتابعة</p>
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>رقم الرخصة</label>
+                    <div class="input-wrapper">
+                        <input type="text" class="form-input" id="licenseNumber" placeholder="أدخل رقم الرخصة" required>
+                        <i class="fas fa-id-card"></i>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>رقم الهاتف</label>
+                    <div class="input-wrapper">
+                        <input type="tel" class="form-input" id="phoneNumber" placeholder="07XXXXXXXXX" required>
+                        <i class="fas fa-phone"></i>
+                    </div>
+                </div>
+
+                <button type="submit" class="login-btn">
+                    <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- الصفحة الرئيسية -->
+    <div class="app-container" id="appPage">
+        <div class="app-header">
+            <div class="header-top">
+                <div class="lawyer-info">
+                    <h2 id="lawyerName">المحامي</h2>
+                    <p id="lawyerLicense">رخصة: </p>
+                </div>
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="ابحث عن قضية...">
+                <i class="fas fa-search"></i>
+            </div>
+        </div>
+
+        <!-- الإحصائيات -->
+        <div class="stats-container">
+            <div class="stat-card total">
+                <i class="fas fa-folder"></i>
+                <div class="stat-number" id="totalCases">0</div>
+                <div class="stat-label">إجمالي القضايا</div>
+            </div>
+            <div class="stat-card active">
+                <i class="fas fa-folder-open"></i>
+                <div class="stat-number" id="activeCases">0</div>
+                <div class="stat-label">قضايا نشطة</div>
+            </div>
+            <div class="stat-card pending">
+                <i class="fas fa-clock"></i>
+                <div class="stat-number" id="pendingCases">0</div>
+                <div class="stat-label">قيد المتابعة</div>
+            </div>
+            <div class="stat-card closed">
+                <i class="fas fa-check-circle"></i>
+                <div class="stat-number" id="closedCases">0</div>
+                <div class="stat-label">مغلقة</div>
+            </div>
+        </div>
+
+        <!-- قائمة القضايا -->
+        <div class="cases-container">
+            <div class="section-title">
+                <i class="fas fa-briefcase"></i>
+                قضاياي
+            </div>
+            <div id="casesList"></div>
+        </div>
+    </div>
+
+    <!-- صفحة تفاصيل القضية -->
+    <div class="case-detail-page" id="caseDetailPage">
+        <div class="detail-header">
+            <button class="back-btn" onclick="backToMain()">
+                <i class="fas fa-arrow-right"></i>
+            </button>
+            <h2 id="detailCaseTitle"></h2>
+            <p id="detailCaseNumber"></p>
+        </div>
+
+        <div class="detail-content">
+            <div class="info-section">
+                <h3><i class="fas fa-info-circle"></i> معلومات القضية</h3>
+                <div id="caseInfoContent"></div>
+            </div>
+
+            <div class="info-section">
+                <h3><i class="fas fa-user"></i> معلومات المدعى عليه</h3>
+                <div id="defendantInfoContent"></div>
+            </div>
+
+            <div class="info-section">
+                <h3><i class="fas fa-money-bill-wave"></i> الاستقطاعات</h3>
+                <button class="action-btn btn-deduction" onclick="showAddDeductionModal()" style="width: 100%; margin-bottom: 15px;">
+                    <i class="fas fa-plus"></i> إضافة استقطاع جديد
+                </button>
+                <div id="deductionsContent"></div>
+            </div>
+
+            <div class="case-actions" style="padding: 0 20px 20px;">
+                <button class="action-btn btn-update" onclick="showUpdateStatusModal()" style="width: 100%;">
+                    <i class="fas fa-edit"></i> تحديث حالة القضية
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal تحديث الحالة -->
+    <div class="modal-overlay" id="updateStatusModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>تحديث حالة القضية</h3>
+                <button class="close-modal" onclick="closeModal('updateStatusModal')">×</button>
+            </div>
+            <form class="modal-form" id="updateStatusForm">
+                <div class="form-group">
+                    <label>الحالة الجديدة</label>
+                    <select id="newStatus" required>
+                        <option value="">اختر الحالة</option>
+                        <option value="جديدة">جديدة</option>
+                        <option value="تحت المراجعة">تحت المراجعة</option>
+                        <option value="في المحكمة">في المحكمة</option>
+                        <option value="تنفيذ">تنفيذ</option>
+                        <option value="مغلقة">مغلقة</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>ملاحظات</label>
+                    <textarea id="statusNotes" placeholder="أضف ملاحظاتك هنا..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="modal-btn btn-save">حفظ</button>
+                    <button type="button" class="modal-btn btn-cancel" onclick="closeModal('updateStatusModal')">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal إضافة استقطاع -->
+    <div class="modal-overlay" id="addDeductionModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>إضافة استقطاع جديد</h3>
+                <button class="close-modal" onclick="closeModal('addDeductionModal')">×</button>
+            </div>
+            <form class="modal-form" id="addDeductionForm">
+                <div class="form-group">
+                    <label>المبلغ (IQD)</label>
+                    <input type="number" class="form-input" id="deductionAmount" placeholder="0" required>
+                </div>
+                <div class="form-group">
+                    <label>نوع الاستقطاع</label>
+                    <select id="deductionType" required>
+                        <option value="">اختر النوع</option>
+                        <option value="أتعاب محاماة">أتعاب محاماة</option>
+                        <option value="رسوم محكمة">رسوم محكمة</option>
+                        <option value="مصاريف إدارية">مصاريف إدارية</option>
+                        <option value="أخرى">أخرى</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>حالة الدفع</label>
+                    <select id="deductionStatus" required>
+                        <option value="قيد المعالجة">قيد المعالجة</option>
+                        <option value="مستلم">مستلم</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>ملاحظات</label>
+                    <textarea id="deductionNotes" placeholder="تفاصيل إضافية..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="modal-btn btn-save">إضافة</button>
+                    <button type="button" class="modal-btn btn-cancel" onclick="closeModal('addDeductionModal')">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDrZmZwSOVhonbLWGrHnctkV4tUcT7UNZM",
+            authDomain: "legal-department-dbd28.firebaseapp.com",
+            databaseURL: "https://legal-department-dbd28-default-rtdb.firebaseio.com",
+            projectId: "legal-department-dbd28",
+            storageBucket: "legal-department-dbd28.firebasestorage.app",
+            messagingSenderId: "452600951683",
+            appId: "1:452600951683:web:2929d22d53a309d947fcb6"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // Global Variables
+        let currentLawyer = null;
+        let currentCases = [];
+        let selectedCase = null;
+
+        // Login Form Handler
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const license = document.getElementById('licenseNumber').value.trim();
+            const phone = document.getElementById('phoneNumber').value.trim();
+            
+            await loginLawyer(license, phone);
+        });
+
+        // Login Function - تم التحديث للبحث مباشرة في القضايا
+        async function loginLawyer(license, phone) {
+            showLoading();
+            
+            try {
+                // إنشاء كائن المحامي الحالي من بيانات الدخول
+                currentLawyer = {
+                    license: license,
+                    phone: phone,
+                    loginTime: new Date().toISOString()
+                };
+                
+                // تحميل القضايا بناءً على رقم الرخصة ورقم الهاتف
+                await loadLawyerCases();
+                
+                if (currentCases.length === 0) {
+                    throw new Error('لا توجد قضايا مرتبطة بهذا المحامي');
+                }
+                
+                // استخراج اسم المحامي من أول قضية
+                const firstCase = currentCases[0];
+                currentLawyer.name = firstCase.lawyerName || firstCase.lawyer || 'المحامي';
+                currentLawyer.id = firstCase.lawyerId || license;
+                
+                localStorage.setItem('currentLawyer', JSON.stringify(currentLawyer));
+                
+                showApp();
+                showNotification('تم تسجيل الدخول بنجاح', `مرحباً ${currentLawyer.name}`, 'success');
+                
+            } catch (error) {
+                console.error('Login Error:', error);
+                showNotification('خطأ في تسجيل الدخول', error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Load Lawyer Cases - تم التحديث للبحث في بيانات القضية مباشرة
+        async function loadLawyerCases() {
+            try {
+                const snapshot = await db.ref('legal_data/cases/active').once('value');
+                const allCases = snapshot.val();
+                
+                if (!allCases) {
+                    currentCases = [];
+                    return;
+                }
+
+                // البحث في جميع القضايا عن تطابق رقم الرخصة أو رقم الهاتف
+                currentCases = [];
+                
+                Object.entries(allCases).forEach(([key, caseItem]) => {
+                    // التأكد من وجود معرف فريد لكل قضية
+                    if (!caseItem.id) {
+                        caseItem.id = caseItem.caseNumber || key.replace('case_', '');
+                    }
+                    
+                    // إضافة المفتاح من Firebase
+                    caseItem.firebaseKey = key;
+                    
+                    // التحقق من جميع الحقول الممكنة للمحامي في القضية
+                    const lawyerLicense = caseItem.lawyerLicense || caseItem.license;
+                    const lawyerPhone = caseItem.lawyerPhone || caseItem.phone;
+                    const lawyerId = caseItem.lawyerId;
+                    const lawyerName = caseItem.lawyerName || caseItem.lawyer;
+                    
+                    // البحث بناءً على رقم الرخصة أو رقم الهاتف
+                    const isMatch = (lawyerLicense && lawyerLicense === currentLawyer.license) ||
+                                   (lawyerPhone && lawyerPhone === currentLawyer.phone) ||
+                                   (lawyerId && lawyerId === currentLawyer.license) ||
+                                   // إذا كان اسم المحامي موجوداً في بيانات القضية والتسجيل
+                                   (currentLawyer.name && lawyerName && 
+                                    (lawyerName.includes(currentLawyer.name) || 
+                                     currentLawyer.name.includes(lawyerName)));
+                    
+                    if (isMatch) {
+                        currentCases.push(caseItem);
+                    }
+                });
+
+                console.log(`تم العثور على ${currentCases.length} قضية للمحامي`);
+                console.log('القضايا:', currentCases.map(c => ({id: c.id, number: c.caseNumber})));
+                
+                updateStats();
+                renderCases();
+                
+            } catch (error) {
+                console.error('Load Cases Error:', error);
+                showNotification('خطأ', 'فشل تحميل القضايا', 'error');
+            }
+        }
+
+        // Update Statistics
+        function updateStats() {
+            document.getElementById('totalCases').textContent = currentCases.length;
+            document.getElementById('activeCases').textContent = 
+                currentCases.filter(c => c.status === 'في المحكمة' || c.status === 'تحت المراجعة').length;
+            document.getElementById('pendingCases').textContent = 
+                currentCases.filter(c => c.status === 'جديدة').length;
+            document.getElementById('closedCases').textContent = 
+                currentCases.filter(c => c.status === 'مغلقة' || c.status === 'تنفيذ').length;
+        }
+
+        // Render Cases
+        function renderCases(casesToRender = currentCases) {
+            const container = document.getElementById('casesList');
+            
+            if (casesToRender.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-folder-open"></i>
+                        <p>لا توجد قضايا مرتبطة بك</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = casesToRender.map(caseItem => `
+                <div class="case-card" onclick="showCaseDetail('${caseItem.id}')">
+                    <div class="case-header">
+                        <div>
+                            <div class="case-title">${caseItem.caseTitle || 'قضية ' + caseItem.caseNumber}</div>
+                            <div class="case-number">رقم: ${caseItem.caseNumber}</div>
+                        </div>
+                        <div class="case-status ${getStatusClass(caseItem.status)}">${caseItem.status}</div>
+                    </div>
+                    <div class="case-details">
+                        <div class="detail-item">
+                            <i class="fas fa-user"></i>
+                            ${caseItem.defendantName || 'غير محدد'}
+                        </div>
+                        <div class="detail-item">
+                            <i class="fas fa-calendar"></i>
+                            ${caseItem.filingDate || 'غير محدد'}
+                        </div>
+                        <div class="detail-item">
+                            <i class="fas fa-gavel"></i>
+                            ${caseItem.court || 'غير محدد'}
+                        </div>
+                        <div class="detail-item">
+                            <i class="fas fa-money-bill"></i>
+                            ${formatMoney(caseItem.caseAmount || 0)}
+                        </div>
+                    </div>
+                    <div class="case-actions">
+                        <button class="action-btn btn-update" onclick="event.stopPropagation(); showCaseDetail('${caseItem.id}')">
+                            <i class="fas fa-eye"></i> التفاصيل
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Show Case Detail
+        async function showCaseDetail(caseId) {
+            showLoading();
+            
+            try {
+                // البحث عن القضية بعدة طرق للتأكد من إيجادها
+                let caseItem = currentCases.find(c => c.id === caseId);
+                
+                // إذا لم نجدها بالـ id، نبحث برقم القضية
+                if (!caseItem) {
+                    caseItem = currentCases.find(c => c.caseNumber === caseId);
+                }
+                
+                // إذا لم نجدها بعد، نبحث بمفتاح Firebase
+                if (!caseItem) {
+                    caseItem = currentCases.find(c => c.firebaseKey === caseId);
+                }
+                
+                if (!caseItem) {
+                    console.error('لم يتم العثور على القضية. المعرف المطلوب:', caseId);
+                    console.error('القضايا المتاحة:', currentCases);
+                    throw new Error('القضية غير موجودة');
+                }
+                
+                selectedCase = caseItem;
+                
+                document.getElementById('detailCaseTitle').textContent = caseItem.caseTitle || 'قضية ' + caseItem.caseNumber;
+                document.getElementById('detailCaseNumber').textContent = 'رقم القضية: ' + caseItem.caseNumber;
+                
+                // Case Info
+                document.getElementById('caseInfoContent').innerHTML = `
+                    <div class="info-row">
+                        <span class="info-label">رقم القضية</span>
+                        <span class="info-value">${caseItem.caseNumber}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">الحالة</span>
+                        <span class="info-value case-status ${getStatusClass(caseItem.status)}">${caseItem.status}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">المحكمة</span>
+                        <span class="info-value">${caseItem.court || 'غير محدد'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">تاريخ التقديم</span>
+                        <span class="info-value">${caseItem.filingDate || 'غير محدد'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">المبلغ المطالب به</span>
+                        <span class="info-value">${formatMoney(caseItem.caseAmount || 0)}</span>
+                    </div>
+                `;
+                
+                // Defendant Info
+                document.getElementById('defendantInfoContent').innerHTML = `
+                    <div class="info-row">
+                        <span class="info-label">الاسم</span>
+                        <span class="info-value">${caseItem.defendantName || 'غير محدد'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">رقم الهاتف</span>
+                        <span class="info-value">${caseItem.defendantPhone || 'غير محدد'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">العنوان</span>
+                        <span class="info-value">${caseItem.defendantAddress || 'غير محدد'}</span>
+                    </div>
+                `;
+                
+                // Load Deductions - استخدام id أو caseNumber
+                await loadDeductions(caseItem.id || caseItem.caseNumber);
+                
+                // Show detail page
+                document.getElementById('appPage').style.display = 'none';
+                document.getElementById('caseDetailPage').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Show Detail Error:', error);
+                showNotification('خطأ', error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Load Deductions
+        async function loadDeductions(caseId) {
+            try {
+                const snapshot = await db.ref('legal_data/deductions/payments').once('value');
+                const allDeductions = snapshot.val();
+                
+                let caseDeductions = [];
+                if (allDeductions) {
+                    // البحث بعدة طرق: caseId, caseNumber, أو أي معرف آخر
+                    caseDeductions = Object.values(allDeductions).filter(d => {
+                        return d.caseId === caseId || 
+                               d.caseNumber === caseId ||
+                               d.caseNumber === selectedCase.caseNumber ||
+                               d.caseId === selectedCase.caseNumber;
+                    });
+                }
+                
+                console.log(`تم العثور على ${caseDeductions.length} استقطاع للقضية ${caseId}`);
+                
+                const container = document.getElementById('deductionsContent');
+                
+                if (caseDeductions.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #9ca3af; padding: 20px;">لا توجد استقطاعات</p>';
+                    return;
+                }
+                
+                container.innerHTML = caseDeductions.map(deduction => `
+                    <div class="info-row">
+                        <div>
+                            <div class="info-value">${formatMoney(deduction.amount)}</div>
+                            <div style="font-size: 12px; color: #9ca3af;">${deduction.type || 'استقطاع'}</div>
+                            ${deduction.notes ? `<div style="font-size: 11px; color: #6b7280; margin-top: 4px;">${deduction.notes}</div>` : ''}
+                        </div>
+                        <div class="case-status ${deduction.status === 'مستلم' ? 'status-active' : 'status-pending'}">
+                            ${deduction.status || 'قيد المعالجة'}
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Load Deductions Error:', error);
+            }
+        }
+
+        // Show Update Status Modal
+        function showUpdateStatusModal() {
+            document.getElementById('newStatus').value = selectedCase.status || '';
+            document.getElementById('updateStatusModal').style.display = 'flex';
+        }
+
+        // Update Status Form Handler
+        document.getElementById('updateStatusForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showLoading();
+            
+            try {
+                const newStatus = document.getElementById('newStatus').value;
+                const notes = document.getElementById('statusNotes').value;
+                
+                const updates = {
+                    status: newStatus,
+                    lastUpdate: new Date().toISOString(),
+                    lastUpdateBy: currentLawyer.name,
+                    lastUpdateNotes: notes
+                };
+                
+                await db.ref(`legal_data/cases/active/case_${selectedCase.id}`).update(updates);
+                
+                selectedCase.status = newStatus;
+                await loadLawyerCases();
+                await showCaseDetail(selectedCase.id);
+                
+                closeModal('updateStatusModal');
+                showNotification('تم التحديث', 'تم تحديث حالة القضية بنجاح', 'success');
+                
+            } catch (error) {
+                console.error('Update Status Error:', error);
+                showNotification('خطأ', 'فشل تحديث الحالة', 'error');
+            } finally {
+                hideLoading();
+            }
+        });
+
+        // Show Add Deduction Modal
+        function showAddDeductionModal() {
+            document.getElementById('addDeductionForm').reset();
+            document.getElementById('addDeductionModal').style.display = 'flex';
+        }
+
+        // Add Deduction Form Handler
+        document.getElementById('addDeductionForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showLoading();
+            
+            try {
+                const amount = parseFloat(document.getElementById('deductionAmount').value);
+                const type = document.getElementById('deductionType').value;
+                const status = document.getElementById('deductionStatus').value;
+                const notes = document.getElementById('deductionNotes').value;
+                
+                const deductionId = Date.now().toString();
+                const deduction = {
+                    id: deductionId,
+                    caseId: selectedCase.id,
+                    caseNumber: selectedCase.caseNumber,
+                    defendantName: selectedCase.defendantName,
+                    lawyerId: currentLawyer.id,
+                    lawyerName: currentLawyer.name,
+                    amount: amount,
+                    type: type,
+                    status: status,
+                    notes: notes,
+                    date: new Date().toISOString().split('T')[0],
+                    createdAt: new Date().toISOString(),
+                    createdBy: currentLawyer.name
+                };
+                
+                await db.ref(`legal_data/deductions/payments/deduction_${deductionId}`).set(deduction);
+                
+                await loadDeductions(selectedCase.id);
+                closeModal('addDeductionModal');
+                showNotification('تم الإضافة', 'تم إضافة الاستقطاع بنجاح', 'success');
+                
+            } catch (error) {
+                console.error('Add Deduction Error:', error);
+                showNotification('خطأ', 'فشل إضافة الاستقطاع', 'error');
+            } finally {
+                hideLoading();
+            }
+        });
+
+        // Search Handler
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            
+            if (!searchTerm) {
+                renderCases(currentCases);
+                return;
+            }
+            
+            const filtered = currentCases.filter(c => 
+                c.caseNumber.toLowerCase().includes(searchTerm) ||
+                (c.caseTitle && c.caseTitle.toLowerCase().includes(searchTerm)) ||
+                (c.defendantName && c.defendantName.toLowerCase().includes(searchTerm))
+            );
+            
+            renderCases(filtered);
+        });
+
+        // Helper Functions
+        function getStatusClass(status) {
+            if (status === 'في المحكمة' || status === 'تحت المراجعة') return 'status-active';
+            if (status === 'جديدة') return 'status-pending';
+            return 'status-closed';
+        }
+
+        function formatMoney(amount) {
+            return new Intl.NumberFormat('ar-IQ', {
+                style: 'currency',
+                currency: 'IQD',
+                minimumFractionDigits: 0
+            }).format(amount);
+        }
+
+        function showApp() {
+            document.getElementById('loginPage').style.display = 'none';
+            document.getElementById('appPage').style.display = 'block';
+            document.getElementById('lawyerName').textContent = currentLawyer.name;
+            document.getElementById('lawyerLicense').textContent = 'رخصة: ' + currentLawyer.license;
+        }
+
+        function backToMain() {
+            document.getElementById('caseDetailPage').style.display = 'none';
+            document.getElementById('appPage').style.display = 'block';
+            selectedCase = null;
+        }
+
+        function logout() {
+            if (confirm('هل تريد تسجيل الخروج؟')) {
+                localStorage.removeItem('currentLawyer');
+                currentLawyer = null;
+                currentCases = [];
+                document.getElementById('appPage').style.display = 'none';
+                document.getElementById('loginPage').style.display = 'flex';
+                document.getElementById('loginForm').reset();
+            }
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function showNotification(title, message, type = 'success') {
+            const notification = document.getElementById('notification');
+            const icon = notification.querySelector('i');
+            
+            notification.className = `notification ${type}`;
+            icon.className = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
+            
+            document.getElementById('notificationTitle').textContent = title;
+            document.getElementById('notificationMessage').textContent = message;
+            
+            notification.style.display = 'flex';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 4000);
+        }
+
+        // Auto-login if saved
+        window.addEventListener('load', async () => {
+            const saved = localStorage.getItem('currentLawyer');
+            if (saved) {
+                try {
+                    currentLawyer = JSON.parse(saved);
+                    await loadLawyerCases();
+                    showApp();
+                } catch (error) {
+                    localStorage.removeItem('currentLawyer');
+                }
+            }
+        });
+
+        // Close modals on overlay click
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
